@@ -4,17 +4,17 @@ import { getAuth, signInAnonymously } from 'firebase/auth';
 import { getFirestore, collection, addDoc, onSnapshot } from 'firebase/firestore';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Trophy, Activity, Dumbbell, Sun, Moon, Plus } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // --- Firebase Configuration ---
-// Using the exact configuration provided by the user.
 const firebaseConfig = {
-  apiKey: "AIzaSyBjTwVy9P7kHc4jlQcfdiI8k9XGYcnNxMI",
-  authDomain: "incursores.firebaseapp.com",
-  projectId: "incursores",
-  storageBucket: "incursores.firebasestorage.app",
-  messagingSenderId: "977966837929",
-  appId: "1:977966837929:web:ad9f2ea6702a39d37f39b8",
-  measurementId: "G-Q9GJ1QTRT6"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 const app = initializeApp(firebaseConfig);
@@ -50,6 +50,34 @@ export default function App() {
     input: theme === 'dark' ? 'bg-[#1a1d20] border-slate-700 text-white focus:border-[#9b111e]' : 'bg-slate-50 border-slate-300 text-black focus:border-[#000080]'
   };
 
+  const playSuccessSound = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const now = ctx.currentTime;
+      
+      // Tres notas rápidas en escala (Do - Mi - Sol)
+      [523.25, 659.25, 783.99].forEach((freq, index) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + index * 0.08);
+        
+        gain.gain.setValueAtTime(0.1, now + index * 0.08);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + index * 0.08 + 0.2);
+        
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc.start(now + index * 0.08);
+        osc.stop(now + index * 0.08 + 0.2);
+      });
+    } catch (e) {
+      console.error("Error al reproducir audio", e);
+    }
+  };
+
   // --- Firebase Data Fetching ---
   useEffect(() => {
     // Authenticate anonymously to ensure read/write works if rules require auth
@@ -83,6 +111,14 @@ export default function App() {
         peso: parseFloat(peso),
         fecha: new Date().toISOString()
       });
+
+      // Reproducir efecto de sonido de éxito
+      playSuccessSound();
+
+      // Mostrar animación de confirmación
+      setShowSuccessBadge(true);
+      setTimeout(() => setShowSuccessBadge(false), 2500);
+
       // Reset some fields, keep name for convenience
       setEjercicio('');
       setPeso('');
@@ -262,8 +298,11 @@ export default function App() {
                         </div>
                         <div className="p-0">
                           {leaderboardData[ejercicio].map((pr, index) => (
-                            <div 
+                            <motion.div 
                               key={pr.id} 
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ duration: 0.3, delay: index * 0.05 }}
                               className={`flex items-center justify-between p-3 px-4 md:p-4 md:px-6 transition-colors border-b last:border-b-0
                                 ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-100'}
                                 ${index === 0 ? t.accentLightBg : 'hover:bg-black/5'}`}
@@ -286,7 +325,7 @@ export default function App() {
                                   {pr.peso} <span className="text-[10px] md:text-sm font-medium opacity-70">kg</span>
                                 </span>
                               </div>
-                            </div>
+                            </motion.div>
                           ))}
                         </div>
                       </div>
@@ -317,7 +356,13 @@ export default function App() {
                 {selectedUser && Object.keys(analyticsData).length > 0 ? (
                   <div className="grid md:grid-cols-2 gap-4 md:gap-6">
                     {Object.keys(analyticsData).sort().map(ex => (
-                      <div key={ex} className={`p-4 md:p-6 rounded-2xl border ${t.card}`}>
+                      <motion.div 
+                      key={ex}
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ duration: 0.4, ease: "easeOut" }}
+                      className={`p-4 md:p-6 rounded-2xl border ${t.card}`}
+                      >
                         <h3 className="text-base md:text-lg font-bold mb-4 md:mb-6 text-center">{ex}</h3>
                         <div className="h-48 md:h-64 w-full">
                           <ResponsiveContainer width="100%" height="100%">
@@ -361,7 +406,7 @@ export default function App() {
                             </LineChart>
                           </ResponsiveContainer>
                         </div>
-                      </div>
+                      </motion.div>
                     ))}
                   </div>
                 ) : (
