@@ -27,16 +27,64 @@ export default function App() {
   const [prs, setPrs] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Form State
+  // Ejercicios
+  const [ejerciciosLista, setEjerciciosLista] = useState([
+    'PESO MUERTO',
+    'PRESS MAQUINA',
+    'PULLOVER',
+    'MARIPOSA',
+    'PRESS INCLINADO',
+    'PRESS BANCA',
+    'FLEXIONES',
+    'JALON AL PECHO',
+    'REMO CON BARRA',
+    'REMO BAJO',
+    'REMO T',
+    'REMO UNILATERAL',
+    'DOMINADAS',
+    'VUELOS ANTERIORES',
+    'PRESS HOMBRO BARRAS',
+    'VUELOS LATERALES',
+    'PRESS HOMBRO',
+    'REMO MENTON',
+    'VUELOS POSTERIORES',
+    'FACE PULL',
+    'SCOTT',
+    'BICEP CONCENTRADO',
+    'ALT CON MANCUERNA',
+    'CURL POLEA',
+    'CURL CON BARRA',
+    'BAYESIANA',
+    'CURL BICEPS INCLINADO',
+    'EXT POLEA ALTA',
+    'FONDOS',
+    'PRESS FRANCES',
+    'EXT CON MANCUERNA',
+    'EXT COPA',
+    'TRASNUCA',
+    'HACK',
+    'CUADRICEPS',
+    'HIP THRUST',
+    'SOLEO',
+    'PRENSA 45°',
+    'ISQUIOTIBIALES',
+    'PATADA DE GLUTEO',
+    'MULTICADERA',
+    'SENTADILLA',
+    'ESTOCADAS',
+    'ABDUCTOR',
+    'ADUCTOR'
+  ]);
+  const [mostrarAvisoNuevo, setMostrarAvisoNuevo] = useState(false);
   const [nombre, setNombre] = useState('');
   const [ejercicio, setEjercicio] = useState('');
   const [peso, setPeso] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Analytics State
+  // Analiticas
   const [selectedUser, setSelectedUser] = useState('');
 
-  // --- Theme Classes ---
+  // Temas
   const t = {
     bg: theme === 'dark' ? 'bg-[#212529]' : 'bg-[#fdfdfd]',
     text: theme === 'dark' ? 'text-slate-200' : 'text-slate-800',
@@ -99,9 +147,38 @@ export default function App() {
   }, []);
 
   // --- Handlers ---
+  // Maneja el cambio de texto en el input de Ejercicio
+  const handleEjercicioChange = (e) => {
+    const val = e.target.value;
+    setEjercicio(val);
+
+    const valUpper = val.trim().toUpperCase();
+    // Si escribió algo y NO está en la lista dropdown, activa la notificación
+    if (valUpper && !ejerciciosLista.includes(valUpper)) {
+      setMostrarAvisoNuevo(true);
+    } else {
+      setMostrarAvisoNuevo(false);
+    }
+  };
+
+  // Agrega el nuevo ejercicio a la lista completa
+  const agregarNuevoEjercicio = (nombreNuevo) => {
+    const formatted = nombreNuevo.trim().toUpperCase();
+    if (formatted && !ejerciciosLista.includes(formatted)) {
+      setEjerciciosLista(prev => [...prev, formatted]);
+    }
+    setMostrarAvisoNuevo(false);
+  };
+
   const handleSubmitPR = async (e) => {
     e.preventDefault();
-    if (!nombre.trim() || !ejercicio.trim() || !peso) return;
+    const ejUpper = ejercicio.trim().toUpperCase();
+    if (!nombre.trim() || !ejUpper || !peso) return;
+
+    // Si el ejercicio no está en la lista al presionar 'Confirmar PR', se agrega a la lista
+    if (!ejerciciosLista.includes(ejUpper)) {
+      agregarNuevoEjercicio(ejUpper);
+    }
     
     setIsSubmitting(true);
     try {
@@ -241,29 +318,46 @@ export default function App() {
                     </h2>
                     <form onSubmit={handleSubmitPR} className="space-y-3 md:space-y-4">
                       <div>
-                        <label className={`block text-xs md:text-sm font-medium mb-1 ${t.textMuted}`}>Tu Nombre</label>
+                        <label className={`block text-xs md:text-sm font-medium mb-1 ${t.textMuted}`}>Nombre</label>
                         <input 
                           type="text" required
                           value={nombre} onChange={e => setNombre(e.target.value)}
                           className={`w-full p-2.5 md:p-3 text-sm md:text-base rounded-lg border outline-none transition-all ${t.input}`}
-                          placeholder="Ej: Tomas"
+                          placeholder="Jesús te ama"
                         />
                       </div>
                       <div>
                         <label className={`block text-xs md:text-sm font-medium mb-1 ${t.textMuted}`}>Ejercicio</label>
                         <input 
-                          type="text" required
-                          value={ejercicio} onChange={e => setEjercicio(e.target.value)}
+                          type="text" 
+                          required
+                          value={ejercicio} 
+                          onChange={handleEjercicioChange}
                           className={`w-full p-2.5 md:p-3 text-sm md:text-base rounded-lg border outline-none transition-all ${t.input}`}
-                          placeholder="Ej: Press Banca"
+                          placeholder="1 Timoteo 4:8"
                           list="ejercicios-comunes"
                         />
+                        
+                        {/* Dropdown dinámico alimentado por el estado ejerciciosLista */}
                         <datalist id="ejercicios-comunes">
-                          <option value="PRESS BANCA" />
-                          <option value="SENTADILLA" />
-                          <option value="PESO MUERTO" />
-                          <option value="PRESS MILITAR" />
+                          {ejerciciosLista.map((item, idx) => (
+                            <option key={idx} value={item} />
+                          ))}
                         </datalist>
+
+                        {/* Notificación interactiva cuando se ingresa un ejercicio no registrado */}
+                        {mostrarAvisoNuevo && (
+                          <div className="mt-2 p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-center justify-between text-xs text-amber-500 animate-fade-in">
+                            <span>¿Agregar <strong>"{ejercicio.trim().toUpperCase()}"</strong> a la lista?</span>
+                            <button
+                              type="button"
+                              onClick={() => agregarNuevoEjercicio(ejercicio)}
+                              className="px-2.5 py-1 bg-amber-500 text-black font-bold rounded-md hover:bg-amber-400 transition-colors shadow-sm"
+                            >
+                              + Agregar
+                            </button>
+                          </div>
+                        )}
                       </div>
                       <div>
                         <label className={`block text-xs md:text-sm font-medium mb-1 ${t.textMuted}`}>Peso (kg)</label>
@@ -271,7 +365,7 @@ export default function App() {
                           type="number" step="0.5" required
                           value={peso} onChange={e => setPeso(e.target.value)}
                           className={`w-full p-2.5 md:p-3 text-sm md:text-base rounded-lg border outline-none transition-all ${t.input}`}
-                          placeholder="Ej: 100"
+                          placeholder="Ej: 10,5"
                         />
                       </div>
                       <button 
