@@ -210,7 +210,7 @@ const translateFirebaseError = (error) => {
 
 const LoginScreen = ({ t }) => {
   const [mode, setMode] = useState('login'); // 'login', 'register', 'forgot'
-  const [form, setForm] = useState({ username: '', email: '', password: '', gender: 'masculino' });
+  const [form, setForm] = useState({ username: '', email: '', password: '', sex: 'masculino' });
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
@@ -244,7 +244,7 @@ const LoginScreen = ({ t }) => {
       await setDoc(doc(db, 'users', user.uid), {
         username: form.username,
         email: form.email,
-        gender: form.gender,
+        sex: form.sex,
         activeRoutineId: null
       });
 
@@ -306,7 +306,7 @@ const LoginScreen = ({ t }) => {
         await setDoc(doc(db, 'users', user.uid), {
           username: user.displayName || user.email.split('@')[0],
           email: user.email,
-          gender: 'masculino', // Valor por defecto, analíticas lo pueden usar
+          sex: 'masculino', // Valor por defecto, analíticas lo pueden usar
           activeRoutineId: null
         });
       }
@@ -361,8 +361,8 @@ const LoginScreen = ({ t }) => {
             <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Usuario (Solo letras)</label><input type="text" required value={form.username} onChange={e => setForm({...form, username: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} /></div>
             <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Correo Electrónico</label><input type="email" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} /></div>
             <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Contraseña</label><input type="password" required value={form.password} onChange={e => setForm({...form, password: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} /></div>
-            <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Sexo Biológico</label>
-              <select value={form.gender} onChange={e => setForm({...form, gender: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`}>
+            <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Sexo</label>
+              <select value={form.sex} onChange={e => setForm({...form, sex: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`}>
                 <option value="masculino">Masculino</option><option value="femenino">Femenino</option>
               </select>
             </div>
