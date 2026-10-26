@@ -1,633 +1,752 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously } from 'firebase/auth';
-import { getFirestore, collection, addDoc, onSnapshot } from 'firebase/firestore';
 import { 
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell
-} from 'recharts';
-import { Trophy, Activity, Dumbbell, Sun, Moon, Plus, Filter, Calendar } from 'lucide-react';
+  getFirestore, collection, addDoc, onSnapshot, query, where, getDocs, doc, getDoc, deleteDoc, updateDoc, setDoc 
+} from 'firebase/firestore';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { Trophy, Activity, Dumbbell, Sun, Moon, Plus, Home, Calendar, Edit2, Copy, Trash2, Share2, Check, X, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// --- Firebase Configuration ---
-// Usamos concatenación en la API Key para evitar la alerta automática de GitHub
-// y permitimos que el código funcione directamente sin fallos de entorno
+// --- Configuración Segura de Firebase ---
+const getEnv = (key) => {
+  try { return import.meta.env[key]; } catch (e) { return null; }
+};
 const firebaseConfig = {
-  apiKey: "AIzaSy" + "BjTwVy9P7kHc4jlQcfdiI8k9XGYcnNxMI",
-  authDomain: "incursores.firebaseapp.com",
-  projectId: "incursores",
-  storageBucket: "incursores.firebasestorage.app",
-  messagingSenderId: "977966837929",
-  appId: "1:977966837929:web:ad9f2ea6702a39d37f39b8",
-  measurementId: "G-Q9GJ1QTRT6"
+  apiKey: getEnv('VITE_FIREBASE_API_KEY') || "AIzaSyBjTwVy9P7kHc4jlQcfdiI8k9XGYcnNxMI",
+  authDomain: getEnv('VITE_FIREBASE_AUTH_DOMAIN') || "incursores.firebaseapp.com",
+  projectId: getEnv('VITE_FIREBASE_PROJECT_ID') || "incursores",
+  storageBucket: getEnv('VITE_FIREBASE_STORAGE_BUCKET') || "incursores.firebasestorage.app",
+  messagingSenderId: getEnv('VITE_FIREBASE_MESSAGING_SENDER_ID') || "977966837929",
+  appId: getEnv('VITE_FIREBASE_APP_ID') || "1:977966837929:web:ad9f2ea6702a39d37f39b8",
+  measurementId: getEnv('VITE_FIREBASE_MEASUREMENT_ID') || "G-Q9GJ1QTRT6"
 };
 
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
 export const db = getFirestore(app);
 
-// --- Categorization Dictionary ---
+// --- Constantes y Diccionarios ---
+const DAYS = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
+
 const CATEGORY_MAP = {
-  // ESPALDA
-  'PESO MUERTO': 'ESPALDA', 'JALON AL PECHO': 'ESPALDA', 'REMO CON BARRA': 'ESPALDA', 
-  'REMO BAJO': 'ESPALDA', 'REMO T': 'ESPALDA', 'REMO UNILATERAL': 'ESPALDA', 
-  'DOMINADAS': 'ESPALDA', 'FACE PULL': 'ESPALDA',
-  // PECHO
-  'PRESS MAQUINA': 'PECHO', 'PULLOVER': 'PECHO', 'MARIPOSA': 'PECHO', 
-  'PRESS INCLINADO': 'PECHO', 'PRESS BANCA': 'PECHO', 'FLEXIONES': 'PECHO', 'FONDOS': 'PECHO',
-  // HOMBRO
-  'VUELOS ANTERIORES': 'HOMBRO', 'PRESS HOMBRO BARRAS': 'HOMBRO', 'VUELOS LATERALES': 'HOMBRO', 
-  'PRESS HOMBRO': 'HOMBRO', 'REMO MENTON': 'HOMBRO', 'VUELOS POSTERIORES': 'HOMBRO',
-  // BICEPS
-  'SCOTT': 'BICEPS', 'BICEP CONCENTRADO': 'BICEPS', 'ALT CON MANCUERNA': 'BICEPS', 
-  'CURL POLEA': 'BICEPS', 'CURL CON BARRA': 'BICEPS', 'BAYESIANA': 'BICEPS', 'CURL BICEPS INCLINADO': 'BICEPS',
-  // TRICEPS
-  'EXT POLEA ALTA': 'TRICEPS', 'PRESS FRANCES': 'TRICEPS', 'EXT CON MANCUERNA': 'TRICEPS', 
-  'EXT COPA': 'TRICEPS', 'TRASNUCA': 'TRICEPS',
-  // PIERNAS
-  'HACK': 'PIERNAS', 'CUADRICEPS': 'PIERNAS', 'HIP THRUST': 'PIERNAS', 'SOLEO': 'PIERNAS', 
-  'PRENSA 45°': 'PIERNAS', 'ISQUIOTIBIALES': 'PIERNAS', 'PATADA DE GLUTEO': 'PIERNAS', 
-  'MULTICADERA': 'PIERNAS', 'SENTADILLA': 'PIERNAS', 'ESTOCADAS': 'PIERNAS', 
-  'ABDUCTOR': 'PIERNAS', 'ADUCTOR': 'PIERNAS'
+  'PRESS MAQUINA': 'PECHO', 'PULLOVER': 'PECHO', 'MARIPOSA': 'PECHO', 'PRESS INCLINADO': 'PECHO', 'PRESS BANCA': 'PECHO', 'FLEXIONES': 'PECHO', 'FONDOS': 'PECHO',
+  'PESO MUERTO': 'ESPALDA', 'JALON AL PECHO': 'ESPALDA', 'REMO CON BARRA': 'ESPALDA', 'REMO BAJO': 'ESPALDA', 'REMO T': 'ESPALDA', 'REMO UNILATERAL': 'ESPALDA', 'DOMINADAS': 'ESPALDA', 'FACE PULL': 'ESPALDA',
+  'VUELOS ANTERIORES': 'HOMBRO', 'PRESS HOMBRO BARRAS': 'HOMBRO', 'VUELOS LATERALES': 'HOMBRO', 'PRESS HOMBRO': 'HOMBRO', 'REMO MENTON': 'HOMBRO', 'VUELOS POSTERIORES': 'HOMBRO',
+  'SCOTT': 'BICEPS', 'BICEP CONCENTRADO': 'BICEPS', 'ALT CON MANCUERNA': 'BICEPS', 'CURL POLEA': 'BICEPS', 'CURL CON BARRA': 'BICEPS', 'BAYESIANA': 'BICEPS', 'CURL BICEPS INCLINADO': 'BICEPS',
+  'EXT POLEA ALTA': 'TRICEPS', 'PRESS FRANCES': 'TRICEPS', 'EXT CON MANCUERNA': 'TRICEPS', 'EXT COPA': 'TRICEPS', 'TRASNUCA': 'TRICEPS',
+  'HACK': 'CUADRICEPS', 'CUADRICEPS': 'CUADRICEPS', 'PRENSA 45°': 'CUADRICEPS', 'SENTADILLA': 'CUADRICEPS', 'ESTOCADAS': 'CUADRICEPS',
+  'HIP THRUST': 'GLUTEOS', 'PATADA DE GLUTEO': 'GLUTEOS', 'MULTICADERA': 'GLUTEOS', 'ABDUCTOR': 'GLUTEOS',
+  'ISQUIOTIBIALES': 'ISQUIOTIBIALES',
+  'ADUCTOR': 'ADUCTORES',
+  'SOLEO': 'GEMELOS', 'GEMELOS': 'GEMELOS',
+  'ABDOMINALES': 'ABDOMINALES', 'CRUNCH': 'ABDOMINALES', 'PLANCHA': 'ABDOMINALES'
 };
 
 const getCategory = (ejercicio) => CATEGORY_MAP[ejercicio.toUpperCase()] || 'OTROS';
 
+// Rutas Geométricas para el Mapa Muscular 
+const anatomyPaths = {
+  masculino: {
+    frente: [
+      { id: 'PECHO', d: 'M35,35 L65,35 L60,50 L40,50 Z' },
+      { id: 'ABDOMINALES', d: 'M42,52 L58,52 L55,85 L45,85 Z' },
+      { id: 'HOMBRO', d: 'M25,30 L33,30 L30,45 Z M75,30 L67,30 L70,45 Z' },
+      { id: 'BICEPS', d: 'M25,48 L32,48 L28,65 L22,65 Z M75,48 L68,48 L72,65 L78,65 Z' },
+      { id: 'CUADRICEPS', d: 'M35,90 L48,90 L45,130 L32,130 Z M65,90 L52,90 L55,130 L68,130 Z' }
+    ],
+    espalda: [
+      { id: 'ESPALDA', d: 'M35,35 L65,35 L55,60 L45,60 Z' },
+      { id: 'TRICEPS', d: 'M25,48 L32,48 L28,65 L22,65 Z M75,48 L68,48 L72,65 L78,65 Z' },
+      { id: 'GLUTEOS', d: 'M40,75 L50,85 L45,95 L35,90 Z M60,75 L50,85 L55,95 L65,90 Z' },
+      { id: 'ISQUIOTIBIALES', d: 'M35,100 L48,100 L45,130 L32,130 Z M65,100 L52,100 L55,130 L68,130 Z' },
+      { id: 'GEMELOS', d: 'M32,135 L45,135 L40,165 L30,165 Z M68,135 L55,135 L60,165 L70,165 Z' }
+    ]
+  },
+  femenino: {
+    frente: [
+      { id: 'PECHO', d: 'M38,38 L62,38 L58,50 L42,50 Z' }, 
+      { id: 'ABDOMINALES', d: 'M44,52 L56,52 L52,85 L48,85 Z' }, 
+      { id: 'HOMBRO', d: 'M28,33 L35,33 L32,45 Z M72,33 L65,33 L68,45 Z' },
+      { id: 'BICEPS', d: 'M28,48 L34,48 L31,65 L26,65 Z M72,48 L66,48 L69,65 L74,65 Z' },
+      { id: 'CUADRICEPS', d: 'M33,90 L48,90 L45,130 L30,130 Z M67,90 L52,90 L55,130 L70,130 Z' } 
+    ],
+    espalda: [
+      { id: 'ESPALDA', d: 'M38,38 L62,38 L55,60 L45,60 Z' },
+      { id: 'TRICEPS', d: 'M28,48 L34,48 L31,65 L26,65 Z M72,48 L66,48 L69,65 L74,65 Z' },
+      { id: 'GLUTEOS', d: 'M38,75 L50,85 L45,98 L32,90 Z M62,75 L50,85 L55,98 L68,90 Z' }, 
+      { id: 'ISQUIOTIBIALES', d: 'M33,100 L48,100 L45,130 L30,130 Z M67,100 L52,100 L55,130 L70,130 Z' },
+      { id: 'GEMELOS', d: 'M30,135 L45,135 L40,165 L28,165 Z M70,135 L55,135 L60,165 L72,165 Z' }
+    ]
+  }
+};
+
+// --- Utilidades ---
+const hashPassword = async (password) => {
+  const msgUint8 = new TextEncoder().encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+};
+
+const getMuscleColor = (muscle, userPrs) => {
+  const musclePrs = userPrs.filter(pr => getCategory(pr.ejercicio) === muscle);
+  if (musclePrs.length === 0) return '#ef4444'; // Rojo (nunca entrenado)
+  
+  const latestDate = new Date(Math.max(...musclePrs.map(pr => new Date(pr.fecha))));
+  const diffDays = Math.floor((new Date() - latestDate) / (1000 * 60 * 60 * 24));
+  
+  if (diffDays >= 27) return '#ef4444'; // Rojo
+  let hue = 0;
+  if (diffDays <= 9) hue = 120 - (diffDays / 9) * 60; // Verde a Amarillo
+  else if (diffDays <= 18) hue = 60 - ((diffDays - 9) / 9) * 30; // Amarillo a Naranja
+  else hue = 30 - ((diffDays - 18) / 9) * 30; // Naranja a Rojo
+  return `hsl(${hue}, 80%, 50%)`;
+};
+
+// --- Componente Principal ---
 export default function App() {
   const [theme, setTheme] = useState('dark');
-  const [activeTab, setActiveTab] = useState('main'); 
+  const [activeTab, setActiveTab] = useState('inicio'); 
+  const [currentUser, setCurrentUser] = useState(null);
+  
+  // Data States
   const [prs, setPrs] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  // Form States
+  const [routines, setRoutines] = useState([]);
   const [ejerciciosLista, setEjerciciosLista] = useState(Object.keys(CATEGORY_MAP));
-  const [mostrarAvisoNuevo, setMostrarAvisoNuevo] = useState(false);
-  const [nombre, setNombre] = useState('');
-  const [ejercicio, setEjercicio] = useState('');
-  const [peso, setPeso] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showSuccessBadge, setShowSuccessBadge] = useState(false);
-
-  // Analytics States
-  const [selectedUser, setSelectedUser] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('TODOS');
-  const [selectedExerciseFilter, setSelectedExerciseFilter] = useState('TODOS');
-  const [selectedTime, setSelectedTime] = useState('ALL');
-  const [selectedMuscle, setSelectedMuscle] = useState(null); // Para el gráfico 4
+  
+  // Loading States
+  const [loading, setLoading] = useState(true);
+  const [loadingMessage, setLoadingMessage] = useState("Verificando sesión...");
+  
+  // Global Animation State
+  const [animations, setAnimations] = useState([]);
 
   // Theme Object
   const t = {
-    bg: theme === 'dark' ? 'bg-[#212529]' : 'bg-[#fdfdfd]',
+    bg: theme === 'dark' ? 'bg-[#121212]' : 'bg-[#f4f7fb]',
     text: theme === 'dark' ? 'text-slate-200' : 'text-slate-800',
     textMuted: theme === 'dark' ? 'text-slate-400' : 'text-slate-500',
-    card: theme === 'dark' ? 'bg-[#2c3136] border-slate-700' : 'bg-white border-slate-200',
-    accentText: theme === 'dark' ? 'text-[#9b111e]' : 'text-[#000080]',
-    accentBg: theme === 'dark' ? 'bg-[#9b111e]' : 'bg-[#000080]',
-    accentHover: theme === 'dark' ? 'hover:bg-[#7a0d17]' : 'hover:bg-[#000066]',
-    accentBorder: theme === 'dark' ? 'border-[#9b111e]' : 'border-[#000080]',
-    accentLightBg: theme === 'dark' ? 'bg-[#9b111e]/10' : 'bg-[#000080]/10',
-    input: theme === 'dark' ? 'bg-[#1a1d20] border-slate-700 text-white focus:border-[#9b111e]' : 'bg-slate-50 border-slate-300 text-black focus:border-[#000080]'
+    card: theme === 'dark' ? 'bg-[#1e1e1e] border-[#2c2c2c]' : 'bg-white border-slate-200',
+    accentText: theme === 'dark' ? 'text-[#e53935]' : 'text-[#1565c0]',
+    accentBg: theme === 'dark' ? 'bg-[#e53935]' : 'bg-[#1565c0]',
+    accentHover: theme === 'dark' ? 'hover:bg-[#c62828]' : 'hover:bg-[#0d47a1]',
+    accentBorder: theme === 'dark' ? 'border-[#e53935]' : 'border-[#1565c0]',
+    accentLightBg: theme === 'dark' ? 'bg-[#e53935]/10' : 'bg-[#1565c0]/10',
+    input: theme === 'dark' ? 'bg-[#2c2c2c] border-slate-700 text-white focus:border-[#e53935]' : 'bg-slate-50 border-slate-300 text-black focus:border-[#1565c0]'
   };
 
-  const playSuccessSound = () => {
+  const playSuccessSound = (isPr = false) => {
     try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
       const now = ctx.currentTime;
-      [523.25, 659.25, 783.99].forEach((freq, index) => {
+      const notes = isPr ? [523.25, 659.25, 783.99, 1046.50] : [523.25, 659.25];
+      notes.forEach((freq, index) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, now + index * 0.08);
-        gain.gain.setValueAtTime(0.1, now + index * 0.08);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + index * 0.08 + 0.2);
+        osc.frequency.setValueAtTime(freq, now + index * 0.1);
+        gain.gain.setValueAtTime(0.1, now + index * 0.1);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + index * 0.1 + 0.3);
         osc.connect(gain);
         gain.connect(ctx.destination);
-        osc.start(now + index * 0.08);
-        osc.stop(now + index * 0.08 + 0.2);
+        osc.start(now + index * 0.1);
+        osc.stop(now + index * 0.1 + 0.3);
       });
-    } catch (e) {
-      console.error("Error al reproducir audio", e);
-    }
+    } catch (e) { console.error("Audio error", e); }
   };
 
+  const triggerFunAnimation = (isPr = false) => {
+    const emojis = isPr ? ['🏆', '👑', '🔥', '🚀'] : ['🎉', '💪', '😎', '👍'];
+    const newAnim = Array.from({ length: isPr ? 20 : 8 }).map((_, i) => ({
+      id: Date.now() + i,
+      emoji: emojis[Math.floor(Math.random() * emojis.length)],
+      x: (Math.random() - 0.5) * window.innerWidth * 0.8,
+      y: Math.random() * -300 - 100,
+      rotation: Math.random() * 360
+    }));
+    setAnimations(prev => [...prev, ...newAnim]);
+    setTimeout(() => {
+      setAnimations(prev => prev.filter(a => !newAnim.find(n => n.id === a.id)));
+    }, 3000);
+  };
+
+  // --- Initial Data Fetch & Auth ---
   useEffect(() => {
-    signInAnonymously(auth).catch((error) => console.warn("Anonymous auth info:", error.message));
-    const unsubscribe = onSnapshot(collection(db, 'prs'), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      data.sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
-      setPrs(data);
+    const initApp = async () => {
+      const sessionId = localStorage.getItem('gymTrackerSession');
+      if (sessionId) {
+        setLoadingMessage("Restaurando tu perfil...");
+        try {
+          const d = await getDoc(doc(db, 'users', sessionId));
+          if (d.exists()) setCurrentUser({ id: d.id, ...d.data() });
+          else localStorage.removeItem('gymTrackerSession');
+        } catch(e) {}
+      }
       setLoading(false);
-    }, (error) => {
-      console.error("Error fetching PRs:", error);
-      setLoading(false);
+    };
+    initApp();
+
+    // Listen to PRs globally for analytics
+    const unsubPrs = onSnapshot(collection(db, 'prs'), (snap) => {
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setPrs(data.sort((a, b) => new Date(a.fecha) - new Date(b.fecha)));
     });
-    return () => unsubscribe();
+
+    return () => unsubPrs();
   }, []);
 
-  const handleEjercicioChange = (e) => {
-    const val = e.target.value;
-    setEjercicio(val);
-    const valUpper = val.trim().toUpperCase();
-    if (valUpper && !ejerciciosLista.includes(valUpper)) {
-      setMostrarAvisoNuevo(true);
-    } else {
-      setMostrarAvisoNuevo(false);
-    }
-  };
-
-  const agregarNuevoEjercicio = (nombreNuevo) => {
-    const formatted = nombreNuevo.trim().toUpperCase();
-    if (formatted && !ejerciciosLista.includes(formatted)) {
-      setEjerciciosLista(prev => [...prev, formatted]);
-    }
-    setMostrarAvisoNuevo(false);
-  };
-
-  const handleSubmitPR = async (e) => {
-    e.preventDefault();
-    const ejUpper = ejercicio.trim().toUpperCase();
-    if (!nombre.trim() || !ejUpper) return; 
-
-    if (!ejerciciosLista.includes(ejUpper)) {
-      agregarNuevoEjercicio(ejUpper);
-    }
-    
-    setIsSubmitting(true);
-    try {
-      await addDoc(collection(db, 'prs'), {
-        nombre: nombre.trim().toUpperCase(),
-        ejercicio: ejUpper,
-        peso: peso ? parseFloat(peso) : null, // Permitir NULL si no hay peso
-        categoria: getCategory(ejUpper),
-        fecha: new Date().toISOString()
-      });
-
-      playSuccessSound();
-      setShowSuccessBadge(true);
-      setTimeout(() => setShowSuccessBadge(false), 2500);
-
-      setEjercicio('');
-      setPeso('');
-    } catch (error) {
-      console.error("Error saving PR:", error);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
-
-  // --- Derived Data: Leaderboard ---
-  const leaderboardData = useMemo(() => {
-    const grouped = {};
-    prs.forEach(pr => {
-      if (pr.peso === null || pr.peso === undefined) return; // Ignorar si no hay peso
-      if (!grouped[pr.ejercicio]) grouped[pr.ejercicio] = {};
-      const currentUserMax = grouped[pr.ejercicio][pr.nombre]?.peso || 0;
-      if (pr.peso > currentUserMax) {
-        grouped[pr.ejercicio][pr.nombre] = pr;
-      }
-    });
-
-    const result = {};
-    Object.keys(grouped).forEach(ex => {
-      result[ex] = Object.values(grouped[ex]).sort((a, b) => b.peso - a.peso);
-    });
-    return result;
-  }, [prs]);
-
-  const allUsers = useMemo(() => Array.from(new Set(prs.map(pr => pr.nombre))).sort(), [prs]);
-  const allCategories = ['TODOS', 'PECHO', 'ESPALDA', 'HOMBRO', 'PIERNAS', 'BICEPS', 'TRICEPS', 'OTROS'];
-
+  // Listen to Routines once user is logged in
   useEffect(() => {
-    if (allUsers.length > 0 && !selectedUser) setSelectedUser(allUsers[0]);
-  }, [allUsers, selectedUser]);
-
-  // --- Derived Data: Analytics ---
-  const { filteredPrs, chart1Data, chart2Data, heatmapData, chart4Data } = useMemo(() => {
-    if (!selectedUser) return { filteredPrs: [], chart1Data: [], chart2Data: [], heatmapData: {}, chart4Data: [] };
+    if (!currentUser) return;
+    const unsubRoutines = onSnapshot(collection(db, 'routines'), (snap) => {
+      setRoutines(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
     
-    // 1. Filter by Time and User
-    const now = new Date();
-    let timeLimit = new Date(0);
-    if (selectedTime === '7D') timeLimit = new Date(now.setDate(now.getDate() - 7));
-    if (selectedTime === '30D') timeLimit = new Date(now.setDate(now.getDate() - 30));
-    if (selectedTime === '90D') timeLimit = new Date(now.setDate(now.getDate() - 90));
-    if (selectedTime === '1Y') timeLimit = new Date(now.setFullYear(now.getFullYear() - 1));
-
-    const userPrs = prs.filter(pr => 
-      pr.nombre === selectedUser && new Date(pr.fecha) >= timeLimit
-    );
-
-    // 2. Identify PRs historically (to grant stars)
-    // A workout is a PR if it's the highest weight for that exercise *up to that date*
-    const maxWeightHistory = {}; 
-    const processedPrs = userPrs.map(pr => {
-      let isPR = false;
-      if (pr.peso !== null) {
-        const currentMax = maxWeightHistory[pr.ejercicio] || 0;
-        if (pr.peso > currentMax) {
-          isPR = true;
-          maxWeightHistory[pr.ejercicio] = pr.peso;
+    // Check for Deep Link Share
+    const checkShare = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const shareId = params.get('shareRoutine');
+      if (shareId) {
+        if (window.confirm("¿Deseas añadir la rutina compartida a tu perfil?")) {
+          setLoadingMessage("Copiando rutina a tu cuenta...");
+          setLoading(true);
+          try {
+            const rDoc = await getDoc(doc(db, 'routines', shareId));
+            if (rDoc.exists()) {
+              const data = rDoc.data();
+              await addDoc(collection(db, 'routines'), {
+                ...data, name: `${data.name} (Compartida)`, authorId: currentUser.id, authorName: currentUser.username
+              });
+            }
+          } catch(e) {}
+          setLoading(false);
         }
+        window.history.replaceState({}, document.title, "/");
       }
-      return { ...pr, isPR, cat: getCategory(pr.ejercicio) };
-    });
+    };
+    checkShare();
+    return () => unsubRoutines();
+  }, [currentUser]);
 
-    // Apply category & exercise filters
-    const filtered = processedPrs.filter(pr => {
-      const matchCat = selectedCategory === 'TODOS' || pr.cat === selectedCategory;
-      const matchEx = selectedExerciseFilter === 'TODOS' || pr.ejercicio === selectedExerciseFilter;
-      return matchCat && matchEx;
-    });
 
-    // Chart 1: Progress Timeline (Count of exercises & PR stars per day)
-    const dailyStats = {};
-    filtered.forEach(pr => {
-      const dateKey = new Date(pr.fecha).toISOString().split('T')[0];
-      if (!dailyStats[dateKey]) dailyStats[dateKey] = { date: dateKey, exerciseCount: 0, prCount: 0 };
-      dailyStats[dateKey].exerciseCount += 1;
-      if (pr.isPR) dailyStats[dateKey].prCount += 1;
-    });
-    const chart1Data = Object.values(dailyStats).sort((a, b) => new Date(a.date) - new Date(b.date)).map(d => ({
-      ...d, 
-      dateFormatted: new Date(d.date).toLocaleDateString([], {day: '2-digit', month: '2-digit'})
-    }));
+  // --- COMPONENTES DE VISTA ---
 
-    // Chart 2: Inverted Histogram (Max Weight per Exercise)
-    const exerciseMaxes = {};
-    filtered.forEach(pr => {
-      if (pr.peso !== null) {
-        if (!exerciseMaxes[pr.ejercicio]) exerciseMaxes[pr.ejercicio] = 0;
-        if (pr.peso > exerciseMaxes[pr.ejercicio]) exerciseMaxes[pr.ejercicio] = pr.peso;
+  const LoginScreen = () => {
+    const [isReg, setIsReg] = useState(false);
+    const [form, setForm] = useState({ username: '', password: '', gender: 'masculino' });
+    const [error, setError] = useState('');
+
+    const handleSubmit = async (e) => {
+      e.preventDefault();
+      setError('');
+      if (!/^[a-zA-Z]+$/.test(form.username)) {
+        setError("El usuario solo debe contener letras (sin espacios ni números).");
+        return;
       }
-    });
-    const chart2Data = Object.keys(exerciseMaxes).map(ex => ({
-      name: ex, peso: exerciseMaxes[ex]
-    })).sort((a, b) => b.peso - a.peso);
-
-    // Chart 3: Heatmap Data (Count per Category)
-    const heatmapData = { PECHO: 0, ESPALDA: 0, HOMBRO: 0, PIERNAS: 0, BICEPS: 0, TRICEPS: 0 };
-    processedPrs.forEach(pr => { // Use processedPrs to ignore exercise/category dropdowns for the full body view
-      if (heatmapData[pr.cat] !== undefined) heatmapData[pr.cat] += 1;
-    });
-
-    // Chart 4: Muscle Timeline
-    const chart4Stats = {};
-    if (selectedMuscle) {
-      processedPrs.filter(pr => pr.cat === selectedMuscle).forEach(pr => {
-        const dateKey = new Date(pr.fecha).toISOString().split('T')[0];
-        if (!chart4Stats[dateKey]) chart4Stats[dateKey] = { date: dateKey, count: 0 };
-        chart4Stats[dateKey].count += 1;
-      });
-    }
-    const chart4Data = Object.values(chart4Stats).sort((a, b) => new Date(a.date) - new Date(b.date)).map(d => ({
-      ...d, dateFormatted: new Date(d.date).toLocaleDateString([], {day: '2-digit', month: '2-digit'})
-    }));
-
-    return { filteredPrs: filtered, chart1Data, chart2Data, heatmapData, chart4Data };
-  }, [prs, selectedUser, selectedCategory, selectedExerciseFilter, selectedTime, selectedMuscle]);
-
-  // SVG Custom Dot for Chart 1
-  const renderCustomStar = (props) => {
-    const { cx, cy, payload } = props;
-    if (payload.prCount === 0) return <circle cx={cx} cy={cy} r={4} fill={theme === 'dark' ? '#334155' : '#cbd5e1'} />;
-    
-    let color = "#FBBF24"; // Gold (1 PR)
-    let size = 6;
-    if (payload.prCount === 2) { color = "#94A3B8"; size = 8; } // Platinum
-    if (payload.prCount >= 3) { color = "#A855F7"; size = 10; } // Cosmic (Purple)
+      
+      setLoadingMessage(isReg ? "Creando tu perfil seguro..." : "Iniciando sesión...");
+      setLoading(true);
+      try {
+        const lowerUser = form.username.toLowerCase();
+        const pHash = await hashPassword(form.password);
+        
+        if (isReg) {
+          const q = query(collection(db, 'users'), where('username_lower', '==', lowerUser));
+          const snaps = await getDocs(q);
+          if (!snaps.empty) throw new Error("Este nombre de usuario ya está en uso.");
+          
+          const newUser = { username: form.username, username_lower: lowerUser, passwordHash: pHash, gender: form.gender, activeRoutineId: null };
+          const docRef = await addDoc(collection(db, 'users'), newUser);
+          setCurrentUser({ id: docRef.id, ...newUser });
+          localStorage.setItem('gymTrackerSession', docRef.id);
+        } else {
+          const q = query(collection(db, 'users'), where('username_lower', '==', lowerUser), where('passwordHash', '==', pHash));
+          const snaps = await getDocs(q);
+          if (snaps.empty) throw new Error("Usuario o contraseña incorrectos.");
+          setCurrentUser({ id: snaps.docs[0].id, ...snaps.docs[0].data() });
+          localStorage.setItem('gymTrackerSession', snaps.docs[0].id);
+        }
+      } catch (err) {
+        setError(err.message);
+      }
+      setLoading(false);
+    };
 
     return (
-      <svg x={cx - size} y={cy - size} width={size*2} height={size*2} viewBox="0 0 24 24" fill={color} stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-      </svg>
+      <div className={`min-h-screen flex items-center justify-center p-4 ${t.bg}`}>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className={`w-full max-w-md p-8 rounded-3xl border shadow-xl ${t.card}`}>
+          <div className="flex justify-center mb-6"><Dumbbell className={t.accentText} size={48} /></div>
+          <h2 className={`text-2xl font-black text-center mb-6 ${t.text}`}>Incursores PR</h2>
+          {error && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 text-red-500 rounded-lg text-sm text-center">{error}</div>}
+          
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className={`block text-sm font-bold mb-1 ${t.textMuted}`}>Usuario</label>
+              <input type="text" required value={form.username} onChange={e => setForm({...form, username: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} placeholder="Solo letras" />
+            </div>
+            <div>
+              <label className={`block text-sm font-bold mb-1 ${t.textMuted}`}>Contraseña</label>
+              <input type="password" required value={form.password} onChange={e => setForm({...form, password: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} placeholder="••••••••" />
+            </div>
+            {isReg && (
+              <div>
+                <label className={`block text-sm font-bold mb-1 ${t.textMuted}`}>Sexo Biológico</label>
+                <select value={form.gender} onChange={e => setForm({...form, gender: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`}>
+                  <option value="masculino">Masculino</option>
+                  <option value="femenino">Femenino</option>
+                </select>
+              </div>
+            )}
+            <button type="submit" className={`w-full p-3 mt-4 rounded-xl font-bold text-white transition-transform active:scale-95 ${t.accentBg} ${t.accentHover}`}>
+              {isReg ? 'Crear Perfil' : 'Ingresar'}
+            </button>
+          </form>
+          <div className="mt-6 text-center">
+            <button onClick={() => { setIsReg(!isReg); setError(''); }} className={`text-sm font-medium ${t.accentText} hover:underline`}>
+              {isReg ? '¿Ya tienes cuenta? Inicia sesión' : '¿Nuevo aquí? Crea tu perfil'}
+            </button>
+          </div>
+        </motion.div>
+      </div>
     );
   };
 
-  // Color generator for Heatmap (Green to Red based on relative volume)
-  const getHeatmapColor = (value) => {
-    const maxVol = Math.max(...Object.values(heatmapData), 1);
-    if (value === 0) return theme === 'dark' ? '#334155' : '#e2e8f0'; // Empty
-    const ratio = value / maxVol; 
-    const hue = 120 - (ratio * 120); // 120 is Green, 0 is Red
-    return `hsl(${hue}, 80%, ${theme === 'dark' ? '50%' : '55%'})`;
+  const InicioTab = () => {
+    const todayNum = new Date().getDay(); // 0 is Sunday
+    const mappedDay = todayNum === 0 ? 'domingo' : DAYS[todayNum - 1]; // map to array
+    const activeRoutine = routines.find(r => r.id === currentUser.activeRoutineId);
+    const [completingIdx, setCompletingIdx] = useState(null);
+    const [kgInput, setKgInput] = useState('');
+
+    const todayISO = new Date().toISOString().split('T')[0];
+    const userTodayPrs = prs.filter(pr => pr.nombre === currentUser.username && pr.fecha.startsWith(todayISO));
+
+    const checkAndSubmitExercise = async (ejercicio) => {
+      const pesoNum = kgInput ? parseFloat(kgInput) : null;
+      let isNewPr = false;
+
+      if (pesoNum) {
+        const prevPrs = prs.filter(p => p.nombre === currentUser.username && p.ejercicio === ejercicio && p.peso !== null);
+        const maxPrev = prevPrs.length > 0 ? Math.max(...prevPrs.map(p => p.peso)) : 0;
+        if (pesoNum > maxPrev) isNewPr = true;
+      }
+
+      await addDoc(collection(db, 'prs'), {
+        nombre: currentUser.username, ejercicio: ejercicio, peso: pesoNum, fecha: new Date().toISOString()
+      });
+
+      playSuccessSound(isNewPr);
+      triggerFunAnimation(isNewPr);
+      setCompletingIdx(null);
+      setKgInput('');
+    };
+
+    if (!activeRoutine) return (
+      <div className={`p-8 text-center rounded-2xl border ${t.card} ${t.textMuted}`}>
+        <h3 className="text-xl font-bold mb-2">Sin rutina activa</h3>
+        <p>Ve a la pestaña Rutinas para seleccionar o crear una.</p>
+      </div>
+    );
+
+    const todayExercises = activeRoutine.exercises[mappedDay] || [];
+
+    return (
+      <div className="space-y-6">
+        <div className={`p-6 rounded-2xl border ${t.card}`}>
+          <h2 className="text-2xl font-bold mb-1">¡A entrenar, {currentUser.username}!</h2>
+          <p className={`capitalize ${t.textMuted}`}>Hoy es {mappedDay} • {activeRoutine.name}</p>
+        </div>
+
+        {todayExercises.length === 0 ? (
+          <div className={`p-8 text-center rounded-2xl border ${t.card} ${t.textMuted}`}>Día de descanso programado. ¡Disfruta!</div>
+        ) : (
+          <div className="grid gap-4">
+            {todayExercises.map((ex, idx) => {
+              const isDone = userTodayPrs.some(pr => pr.ejercicio === ex.ejercicio);
+              return (
+                <motion.div key={idx} initial={{opacity:0, x:-20}} animate={{opacity:1, x:0}} transition={{delay: idx*0.1}} className={`p-4 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-4 ${t.card} ${isDone ? 'opacity-50' : ''}`}>
+                  <div>
+                    <h3 className="font-bold text-lg">{ex.ejercicio}</h3>
+                    <p className={`text-sm ${t.textMuted}`}>{ex.series} series {ex.reps && `x ${ex.reps} reps`}</p>
+                  </div>
+                  
+                  {isDone ? (
+                    <div className="flex items-center gap-2 text-green-500 font-bold bg-green-500/10 px-4 py-2 rounded-lg self-start md:self-auto"><Check size={20}/> Hecho</div>
+                  ) : completingIdx === idx ? (
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
+                      <input type="number" step="0.5" placeholder="Kg (Opcional)" value={kgInput} onChange={e => setKgInput(e.target.value)} className={`p-2 rounded-lg border w-full sm:w-32 ${t.input}`} />
+                      <div className="flex gap-2">
+                        <button onClick={() => checkAndSubmitExercise(ex.ejercicio)} className={`flex-1 px-4 py-2 rounded-lg font-bold text-white ${t.accentBg} ${t.accentHover}`}>Guardar</button>
+                        <button onClick={() => setCompletingIdx(null)} className={`px-3 py-2 rounded-lg border ${theme === 'dark' ? 'border-slate-600 hover:bg-slate-700' : 'border-slate-300 hover:bg-slate-100'}`}><X size={20}/></button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => setCompletingIdx(idx)} className={`px-6 py-2 rounded-lg font-bold border transition-colors self-start md:self-auto ${t.accentBorder} ${t.accentText} ${t.accentLightBg} hover:bg-opacity-20`}>Completar</button>
+                  )}
+                </motion.div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
   };
 
-  const formatDate = (isoString) => {
-    const d = new Date(isoString);
-    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const RutinasTab = () => {
+    const [editing, setEditing] = useState(null);
+    const myRoutines = routines.filter(r => r.authorId === currentUser.id);
+
+    const openCreate = () => setEditing({ name: '', exercises: DAYS.reduce((acc, d) => ({ ...acc, [d]: [] }), {}) });
+    
+    const saveRoutine = async () => {
+      if (!editing.name.trim()) return alert("El nombre es requerido"); // Simple internal alert for empty form
+      setLoadingMessage("Guardando rutina...");
+      setLoading(true);
+      try {
+        const payload = { ...editing, authorId: currentUser.id, authorName: currentUser.username };
+        if (editing.id) await updateDoc(doc(db, 'routines', editing.id), payload);
+        else await addDoc(collection(db, 'routines'), payload);
+        setEditing(null);
+      } catch(e){}
+      setLoading(false);
+    };
+
+    const deleteRoutine = async (id) => {
+      if (window.confirm("¿Eliminar esta rutina para siempre?")) await deleteDoc(doc(db, 'routines', id));
+    };
+
+    const copyRoutine = async (rutina) => {
+      setLoadingMessage("Duplicando rutina...");
+      setLoading(true);
+      await addDoc(collection(db, 'routines'), { ...rutina, id: null, name: `${rutina.name} (Copia)` });
+      setLoading(false);
+    };
+
+    const setActive = async (id) => {
+      await updateDoc(doc(db, 'users', currentUser.id), { activeRoutineId: id });
+      setCurrentUser(prev => ({ ...prev, activeRoutineId: id }));
+    };
+
+    if (editing) return (
+      <div className={`p-4 md:p-6 rounded-2xl border ${t.card}`}>
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-bold">{editing.id ? 'Editar Rutina' : 'Nueva Rutina'}</h2>
+          <button onClick={() => setEditing(null)} className={t.textMuted}><X/></button>
+        </div>
+        <input type="text" placeholder="Nombre de la rutina" value={editing.name} onChange={e => setEditing({...editing, name: e.target.value})} className={`w-full p-3 mb-6 rounded-xl border text-lg font-bold ${t.input}`} />
+        
+        <div className="space-y-6">
+          {DAYS.map(day => (
+            <div key={day} className={`p-4 rounded-xl border ${theme === 'dark' ? 'bg-black/20 border-slate-700/50' : 'bg-slate-50 border-slate-200'}`}>
+              <h3 className="font-bold capitalize mb-3 text-lg">{day}</h3>
+              {editing.exercises[day].map((ex, idx) => (
+                <div key={idx} className="flex flex-col md:flex-row gap-2 mb-3">
+                  <div className="flex-1 relative">
+                    <input type="text" list="lista-ejercicios" placeholder="Ejercicio" value={ex.ejercicio} 
+                      onChange={e => {
+                        const newEx = [...editing.exercises[day]]; newEx[idx].ejercicio = e.target.value;
+                        setEditing({...editing, exercises: {...editing.exercises, [day]: newEx}});
+                      }} className={`w-full p-2.5 rounded-lg border ${t.input}`} />
+                  </div>
+                  <input type="number" placeholder="Series" value={ex.series} 
+                    onChange={e => {
+                      const newEx = [...editing.exercises[day]]; newEx[idx].series = e.target.value;
+                      setEditing({...editing, exercises: {...editing.exercises, [day]: newEx}});
+                    }} className={`w-full md:w-24 p-2.5 rounded-lg border ${t.input}`} />
+                  <input type="text" placeholder="Reps (ej 10)" value={ex.reps} 
+                    onChange={e => {
+                      const newEx = [...editing.exercises[day]]; newEx[idx].reps = e.target.value;
+                      setEditing({...editing, exercises: {...editing.exercises, [day]: newEx}});
+                    }} className={`w-full md:w-32 p-2.5 rounded-lg border ${t.input}`} />
+                  <button onClick={() => {
+                    const newEx = editing.exercises[day].filter((_, i) => i !== idx);
+                    setEditing({...editing, exercises: {...editing.exercises, [day]: newEx}});
+                  }} className="p-2.5 text-red-500 bg-red-500/10 rounded-lg hover:bg-red-500/20"><Trash2 size={20}/></button>
+                </div>
+              ))}
+              <button onClick={() => {
+                const newEx = [...editing.exercises[day], { ejercicio: '', series: '', reps: '' }];
+                setEditing({...editing, exercises: {...editing.exercises, [day]: newEx}});
+              }} className={`text-sm font-bold px-3 py-1.5 rounded-lg border ${t.accentBorder} ${t.accentText} hover:bg-opacity-10 transition-colors`}>+ Ejercicio</button>
+            </div>
+          ))}
+        </div>
+        <button onClick={saveRoutine} className={`w-full mt-6 p-4 rounded-xl font-bold text-white text-lg ${t.accentBg} ${t.accentHover}`}>Guardar Rutina</button>
+        <datalist id="lista-ejercicios">{ejerciciosLista.map(e => <option key={e} value={e}/>)}</datalist>
+      </div>
+    );
+
+    return (
+      <div className="space-y-4">
+        <button onClick={openCreate} className={`w-full p-4 rounded-2xl border border-dashed flex justify-center items-center gap-2 font-bold hover:bg-black/5 transition-colors ${theme === 'dark' ? 'border-slate-600' : 'border-slate-300'}`}><Plus/> Crear Nueva Rutina</button>
+        {myRoutines.length === 0 ? <p className={`text-center p-8 ${t.textMuted}`}>No tienes rutinas. Crea la primera.</p> : (
+          <div className="grid md:grid-cols-2 gap-4">
+            {myRoutines.map(r => {
+              const isActive = currentUser.activeRoutineId === r.id;
+              return (
+                <div key={r.id} className={`p-5 rounded-2xl border relative overflow-hidden transition-all ${t.card} ${isActive ? `ring-2 ring-${theme==='dark'?'red-500':'blue-600'}` : ''}`}>
+                  {isActive && <div className={`absolute top-0 right-0 px-3 py-1 text-[10px] font-bold text-white rounded-bl-lg ${t.accentBg}`}>ACTIVA</div>}
+                  <h3 className="text-xl font-bold mb-1 pr-16">{r.name}</h3>
+                  <p className={`text-xs mb-4 ${t.textMuted}`}>Por {r.authorName}</p>
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => setEditing(r)} className={`p-2 rounded-lg bg-black/5 hover:bg-black/10`}><Edit2 size={16}/></button>
+                    <button onClick={() => copyRoutine(r)} className={`p-2 rounded-lg bg-black/5 hover:bg-black/10`}><Copy size={16}/></button>
+                    <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}?shareRoutine=${r.id}`); alert("¡Link de rutina copiado al portapapeles!"); }} className={`p-2 rounded-lg bg-black/5 hover:bg-black/10`}><Share2 size={16}/></button>
+                    <button onClick={() => deleteRoutine(r.id)} className={`p-2 rounded-lg text-red-500 bg-red-500/10 hover:bg-red-500/20`}><Trash2 size={16}/></button>
+                    {!isActive && <button onClick={() => setActive(r.id)} className={`ml-auto px-4 py-1.5 text-sm font-bold rounded-lg border ${t.accentText} ${t.accentBorder}`}>Activar</button>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
   };
+
+  const RankingTab = () => {
+    const [subTab, setSubTab] = useState('ejercicios'); // 'ejercicios', 'musculos', 'consistencia'
+    const usersSet = Array.from(new Set(prs.map(p => p.nombre)));
+
+    const renderTable = () => {
+      if (subTab === 'ejercicios') {
+        const grouped = {};
+        prs.forEach(pr => {
+          if (!grouped[pr.ejercicio]) grouped[pr.ejercicio] = {};
+          if (pr.peso !== null) {
+            const current = grouped[pr.ejercicio][pr.nombre] || 0;
+            if (pr.peso > current) grouped[pr.ejercicio][pr.nombre] = pr.peso;
+          }
+        });
+        
+        return Object.keys(grouped).sort().map(ej => {
+          const stats = usersSet.map(u => ({ name: u, max: grouped[ej][u] || null })).sort((a,b) => (b.max||0) - (a.max||0));
+          return (
+            <div key={ej} className={`rounded-2xl border mb-6 overflow-hidden ${t.card}`}>
+              <div className={`px-4 py-3 bg-black/5 border-b ${theme === 'dark' ? 'border-slate-700' : 'border-slate-200'}`}><h3 className="font-bold">{ej}</h3></div>
+              {stats.map((s, i) => (
+                <div key={s.name} className={`flex justify-between p-3 px-4 border-b last:border-b-0 ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-100'} ${i===0 && s.max ? t.accentLightBg : ''}`}>
+                  <div className="flex gap-3 items-center">
+                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${i===0 && s.max ? `${t.accentBg} text-white` : 'bg-black/10'}`}>{i===0 && s.max ? <Trophy size={12}/> : i+1}</span>
+                    <span className={`font-bold ${i===0 && s.max ? t.accentText : ''}`}>{s.name}</span>
+                  </div>
+                  <span className="font-black opacity-80">{s.max ? `${s.max} kg` : <span className="text-xs font-normal opacity-50">Sin información</span>}</span>
+                </div>
+              ))}
+            </div>
+          );
+        });
+      }
+
+      if (subTab === 'musculos') {
+        const muscles = Array.from(new Set(Object.values(CATEGORY_MAP))).sort();
+        return muscles.map(m => {
+          const counts = {};
+          prs.filter(p => getCategory(p.ejercicio) === m).forEach(p => counts[p.nombre] = (counts[p.nombre] || 0) + 1);
+          const stats = usersSet.map(u => ({ name: u, count: counts[u] || 0 })).sort((a,b) => b.count - a.count);
+          return (
+            <div key={m} className={`rounded-2xl border mb-6 overflow-hidden ${t.card}`}>
+              <div className={`px-4 py-3 bg-black/5 border-b ${theme === 'dark' ? 'border-slate-700' : 'border-slate-200'}`}><h3 className="font-bold">{m}</h3></div>
+              {stats.map((s, i) => (
+                <div key={s.name} className={`flex justify-between p-3 px-4 border-b last:border-b-0 ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-100'} ${i===0 && s.count>0 ? t.accentLightBg : ''}`}>
+                  <span className="font-bold">{s.name}</span>
+                  <span className="opacity-80">{s.count} ejercicios</span>
+                </div>
+              ))}
+            </div>
+          );
+        });
+      }
+
+      if (subTab === 'consistencia') {
+        const d8 = new Date(); d8.setDate(d8.getDate() - 8);
+        const counts = {};
+        prs.filter(p => new Date(p.fecha) >= d8).forEach(p => counts[p.nombre] = (counts[p.nombre] || 0) + 1);
+        const stats = usersSet.map(u => ({ name: u, count: counts[u] || 0 })).sort((a,b) => b.count - a.count);
+        return (
+          <div className={`rounded-2xl border overflow-hidden ${t.card}`}>
+            <div className={`px-4 py-3 bg-black/5 border-b ${theme === 'dark' ? 'border-slate-700' : 'border-slate-200'}`}><h3 className="font-bold">Ejercicios últimos 8 días</h3></div>
+            {stats.map((s, i) => (
+              <div key={s.name} className={`flex justify-between p-3 px-4 border-b last:border-b-0 ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-100'} ${i===0 && s.count>0 ? t.accentLightBg : ''}`}>
+                <div className="flex gap-3 items-center">
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${i===0 && s.count>0 ? `${t.accentBg} text-white` : 'bg-black/10'}`}>{i===0 && s.count>0 ? <Trophy size={12}/> : i+1}</span>
+                  <span className="font-bold">{s.name}</span>
+                </div>
+                <span className="font-black opacity-80">{s.count} <span className="text-xs font-normal">ejercicios</span></span>
+              </div>
+            ))}
+          </div>
+        );
+      }
+    };
+
+    return (
+      <div className="space-y-6">
+        <div className="flex bg-black/5 p-1 rounded-xl w-full max-w-md mx-auto">
+          {['ejercicios', 'musculos', 'consistencia'].map(tab => (
+            <button key={tab} onClick={() => setSubTab(tab)} className={`flex-1 py-2 text-xs md:text-sm font-bold rounded-lg capitalize transition-all ${subTab === tab ? `${t.accentBg} text-white shadow-md` : 'opacity-60 hover:opacity-100'}`}>
+              {tab}
+            </button>
+          ))}
+        </div>
+        <div>{renderTable()}</div>
+      </div>
+    );
+  };
+
+  const AnalyticsTab = () => {
+    const allUsers = Array.from(new Set(prs.map(p => p.nombre))).sort();
+    const [selectedUser, setSelectedUser] = useState(currentUser?.username || '');
+    const [selectedMuscle, setSelectedMuscle] = useState('TODOS');
+    const [svgView, setSvgView] = useState('frente'); // 'frente', 'espalda'
+
+    const targetGender = selectedUser ? (selectedUser === currentUser?.username ? currentUser.gender : 'masculino') : 'masculino'; // defaults if viewing others without gender known
+    const activePaths = anatomyPaths[targetGender][svgView];
+    const userPrs = prs.filter(p => p.nombre === selectedUser);
+    
+    // Line Chart Data Logic
+    const chartData = useMemo(() => {
+      const filtered = selectedMuscle === 'TODOS' ? userPrs : userPrs.filter(p => getCategory(p.ejercicio) === selectedMuscle);
+      const dataMap = {};
+      filtered.forEach(p => {
+        const dateKey = p.fecha.split('T')[0];
+        if (!dataMap[dateKey]) dataMap[dateKey] = { date: dateKey, volume: 0 };
+        dataMap[dateKey].volume += 1;
+      });
+      return Object.values(dataMap).sort((a,b) => new Date(a.date) - new Date(b.date)).map(d => ({ ...d, dateFormatted: new Date(d.date).toLocaleDateString([], {day:'2-digit',month:'2-digit'}) }));
+    }, [userPrs, selectedMuscle]);
+
+    return (
+      <div className="space-y-6">
+        <div className={`p-4 md:p-6 rounded-2xl border ${t.card} flex flex-wrap gap-4 items-end`}>
+          <div className="flex-1 min-w-[150px]">
+            <label className={`block text-xs font-bold mb-1.5 ${t.textMuted}`}>Perfil a Analizar</label>
+            <select value={selectedUser} onChange={e => setSelectedUser(e.target.value)} className={`w-full p-2.5 rounded-lg border text-sm font-bold outline-none ${t.input}`}>
+              <option value="" disabled>Selecciona perfil...</option>
+              {allUsers.map(u => <option key={u} value={u}>{u}</option>)}
+            </select>
+          </div>
+          <div className="flex-1 min-w-[150px]">
+            <label className={`block text-xs font-bold mb-1.5 ${t.textMuted}`}>Filtrar Músculo</label>
+            <select value={selectedMuscle} onChange={e => setSelectedMuscle(e.target.value)} className={`w-full p-2.5 rounded-lg border text-sm font-bold outline-none ${t.input}`}>
+              <option value="TODOS">TODOS LOS MÚSCULOS</option>
+              {Array.from(new Set(Object.values(CATEGORY_MAP))).sort().map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {selectedUser && (
+          <div className="grid lg:grid-cols-[1fr_300px] gap-6">
+            <div className={`p-4 md:p-6 rounded-2xl border ${t.card} flex flex-col`}>
+              <h3 className="text-lg font-bold mb-6">Volumen de Entrenamiento {selectedMuscle !== 'TODOS' ? `(${selectedMuscle})` : ''}</h3>
+              <div className="h-64 w-full mt-auto">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData} margin={{ top: 5, right: 10, bottom: 5, left: -20 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#475569' : '#e2e8f0'} vertical={false} />
+                    <XAxis dataKey="dateFormatted" stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} tickLine={false} axisLine={false} dy={10} />
+                    <YAxis stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} tickLine={false} axisLine={false} dx={-10} allowDecimals={false} />
+                    <Tooltip contentStyle={{ backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', borderColor: theme === 'dark' ? '#334155' : '#e2e8f0', borderRadius: '8px', color: theme === 'dark' ? '#fff' : '#000', fontSize: '12px' }} formatter={(val) => [val, 'Ejercicios']} />
+                    <Line type="monotone" dataKey="volume" stroke={theme === 'dark' ? '#e53935' : '#1565c0'} strokeWidth={3} dot={{r:4}} activeDot={{ r: 6 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className={`p-4 md:p-6 rounded-2xl border ${t.card} flex flex-col items-center relative overflow-hidden`}>
+              <div className="flex justify-between w-full mb-4 items-center">
+                <h3 className="font-bold">Mapa Muscular</h3>
+                <button onClick={() => setSvgView(svgView === 'frente' ? 'espalda' : 'frente')} className={`text-xs px-2 py-1 rounded-lg border ${t.accentBorder} ${t.accentText}`}>Ver {svgView === 'frente' ? 'Espalda' : 'Frente'}</button>
+              </div>
+              
+              <svg viewBox="0 0 100 200" className="w-full max-w-[160px] drop-shadow-xl overflow-visible">
+                <g stroke={theme === 'dark' ? '#2c2c2c' : '#ffffff'} strokeWidth="1.5" strokeLinejoin="round">
+                  {/* Generic Silhouette Base */}
+                  <ellipse cx="50" cy="18" rx="8" ry="11" fill={theme === 'dark' ? '#333' : '#e2e8f0'} />
+                  <path d="M22,70 L30,55 L70,55 L78,70 Z" fill={theme === 'dark' ? '#333' : '#e2e8f0'} /> {/* arms generic */}
+                  <path d="M35,130 L45,130 L42,165 L30,165 Z M65,130 L55,130 L58,165 L70,165 Z" fill={theme === 'dark' ? '#333' : '#e2e8f0'} /> {/* lower legs generic */}
+                  
+                  {activePaths.map(p => (
+                    <path key={p.id} d={p.d} fill={getMuscleColor(p.id, userPrs)} onClick={() => setSelectedMuscle(p.id)} className="transition-all duration-500 cursor-pointer hover:brightness-125 hover:drop-shadow-lg">
+                      <title>{p.id}</title>
+                    </path>
+                  ))}
+                </g>
+              </svg>
+              
+              <div className="mt-4 w-full flex flex-wrap gap-1 justify-center opacity-80 text-[10px]">
+                <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"></span> {'<'}9d</div>
+                <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-500"></span> {'>'}9d</div>
+                <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-500"></span> {'>'}18d</div>
+                <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500"></span> {'>'}27d</div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // --- Main Layout ---
+  if (loading) return (
+    <div className={`min-h-screen flex flex-col justify-center items-center ${t.bg} ${t.text}`}>
+      <div className={`animate-spin rounded-full h-12 w-12 border-b-2 mb-4 ${t.accentBorder}`}></div>
+      <p className={`font-bold animate-pulse ${t.textMuted}`}>{loadingMessage}</p>
+    </div>
+  );
+
+  if (!currentUser) return <LoginScreen />;
+
+  const TabButton = ({ id, icon: Icon, label }) => (
+    <button onClick={() => setActiveTab(id)} className={`flex-1 py-3 md:py-0 md:px-4 md:h-10 rounded-xl md:rounded-lg flex flex-col md:flex-row items-center justify-center gap-1 text-xs md:text-sm font-bold transition-all ${activeTab === id ? `${t.accentBg} text-white shadow-md transform scale-105 md:scale-100` : `opacity-60 hover:opacity-100 hover:bg-black/5`}`}>
+      <Icon size={18} /> <span className="hidden sm:inline md:inline">{label}</span>
+    </button>
+  );
 
   return (
-    <div className={`min-h-screen font-sans transition-colors duration-300 ${t.bg} ${t.text}`}>
-      {/* Navbar */}
-      <nav className={`sticky top-0 z-50 p-3 md:p-4 border-b ${t.card} backdrop-blur-md bg-opacity-90`}>
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-1.5 md:gap-2">
-            <Dumbbell className={t.accentText} size={24} />
-            <h1 className="text-lg md:text-xl font-bold tracking-tight">Incursores PR</h1>
+    <div className={`min-h-screen font-sans transition-colors duration-300 ${t.bg} ${t.text} pb-24 md:pb-0`}>
+      <nav className={`fixed bottom-0 md:sticky md:top-0 w-full z-40 p-2 md:p-4 border-t md:border-t-0 md:border-b ${t.card} backdrop-blur-md bg-opacity-95 md:bg-opacity-90`}>
+        <div className="max-w-5xl mx-auto flex items-center justify-between">
+          <div className="hidden md:flex items-center gap-2">
+            <Dumbbell className={t.accentText} size={28} />
+            <h1 className="text-xl font-black tracking-tight">Incursores</h1>
           </div>
-          <div className="flex items-center gap-2 md:gap-4">
-            <div className="flex bg-opacity-20 rounded-lg p-1" style={{ backgroundColor: theme === 'dark' ? '#000' : '#e2e8f0' }}>
-              <button 
-                onClick={() => setActiveTab('main')}
-                className={`px-3 py-1.5 rounded-md text-xs md:text-sm font-medium transition-all ${activeTab === 'main' ? `${t.accentBg} text-white shadow-sm` : 'opacity-70 hover:opacity-100'}`}
-              >
-                Ranking
-              </button>
-              <button 
-                onClick={() => setActiveTab('analytics')}
-                className={`px-3 py-1.5 rounded-md text-xs md:text-sm font-medium transition-all flex items-center gap-1 ${activeTab === 'analytics' ? `${t.accentBg} text-white shadow-sm` : 'opacity-70 hover:opacity-100'}`}
-              >
-                <span className="hidden sm:inline">Analíticas</span>
-                <Activity size={14} className="sm:hidden" />
+          <div className="flex items-center justify-between w-full md:w-auto md:gap-4 flex-1 md:flex-none">
+            <div className="flex gap-1 md:gap-2 w-full md:w-auto bg-black/5 p-1 rounded-2xl md:rounded-xl">
+              <TabButton id="inicio" icon={Home} label="Inicio" />
+              <TabButton id="rutinas" icon={Calendar} label="Rutinas" />
+              <TabButton id="ranking" icon={Trophy} label="Ranking" />
+              <TabButton id="analytics" icon={Activity} label="Analíticas" />
+            </div>
+            <div className="hidden md:flex items-center gap-4 border-l pl-4 border-slate-500/20">
+              <div className="text-right">
+                <p className="text-sm font-bold">{currentUser.username}</p>
+                <button onClick={() => { localStorage.removeItem('gymTrackerSession'); setCurrentUser(null); }} className={`text-[10px] ${t.textMuted} hover:underline`}>Cerrar Sesión</button>
+              </div>
+              <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="p-2 rounded-full hover:bg-black/10 transition-colors">
+                {theme === 'dark' ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} className="text-indigo-600" />}
               </button>
             </div>
-            <button onClick={toggleTheme} className="p-1.5 md:p-2 rounded-full hover:bg-slate-500/20 transition-colors">
-              {theme === 'dark' ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} className="text-indigo-600" />}
-            </button>
           </div>
         </div>
       </nav>
 
-      {/* Main Content */}
-      <main className="max-w-6xl mx-auto p-3 md:p-4 py-6 md:py-8">
-        {loading ? (
-          <div className="flex justify-center items-center h-64">
-            <div className={`animate-spin rounded-full h-10 w-10 border-b-2 ${t.accentBorder}`}></div>
-          </div>
-        ) : (
-          <AnimatePresence mode="wait">
-            {/* VIEW 1: Leaderboard & Form */}
-            {activeTab === 'main' && (
-              <motion.div key="main" initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-10}} className="grid lg:grid-cols-[350px_1fr] gap-6 md:gap-8">
-                
-                {/* Form */}
-                <div>
-                  <div className={`p-4 md:p-6 rounded-2xl border ${t.card} shadow-sm md:sticky md:top-24`}>
-                    <h2 className="text-base md:text-lg font-bold mb-4 flex items-center gap-2">
-                      <Plus className={t.accentText} size={18} /> Registrar PR o Día
-                    </h2>
-                    <form onSubmit={handleSubmitPR} className="space-y-4">
-                      <div>
-                        <label className={`block text-xs md:text-sm font-medium mb-1 ${t.textMuted}`}>Nombre</label>
-                        <input type="text" required value={nombre} onChange={e => setNombre(e.target.value)} className={`w-full p-2.5 rounded-lg border outline-none ${t.input}`} placeholder="Tu nombre" />
-                      </div>
-                      <div>
-                        <label className={`block text-xs md:text-sm font-medium mb-1 ${t.textMuted}`}>Ejercicio</label>
-                        <input type="text" required value={ejercicio} onChange={handleEjercicioChange} className={`w-full p-2.5 rounded-lg border outline-none ${t.input}`} placeholder="Ej: Press Banca" list="ejercicios-comunes" />
-                        <datalist id="ejercicios-comunes">
-                          {ejerciciosLista.map((item, idx) => <option key={idx} value={item} />)}
-                        </datalist>
-                        {mostrarAvisoNuevo && (
-                          <div className="mt-2 p-2.5 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-center justify-between text-xs text-amber-500">
-                            <span>¿Agregar <strong>"{ejercicio.trim().toUpperCase()}"</strong>?</span>
-                            <button type="button" onClick={() => agregarNuevoEjercicio(ejercicio)} className="px-2.5 py-1 bg-amber-500 text-black font-bold rounded-md hover:bg-amber-400">+ Agregar</button>
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <label className={`block text-xs md:text-sm font-medium mb-1 ${t.textMuted}`}>
-                          Peso (kg) <span className="opacity-60 font-normal">- Opcional para solo registrar día</span>
-                        </label>
-                        <input type="number" step="0.5" value={peso} onChange={e => setPeso(e.target.value)} className={`w-full p-2.5 rounded-lg border outline-none ${t.input}`} placeholder="Ej: 100" />
-                      </div>
-                      <button type="submit" disabled={isSubmitting} className={`w-full p-3 mt-2 rounded-lg font-bold text-white transition-all transform active:scale-95 ${t.accentBg} ${t.accentHover} disabled:opacity-50`}>
-                        {isSubmitting ? 'Guardando...' : 'Confirmar'}
-                      </button>
-                    </form>
-                  </div>
-                </div>
+      {/* Global Emoji Animations */}
+      <AnimatePresence>
+        {animations.map(anim => (
+          <motion.div key={anim.id} initial={{ opacity: 1, x: 0, y: window.innerHeight, rotate: 0 }} animate={{ opacity: 0, x: anim.x, y: anim.y, rotate: anim.rotation }} transition={{ duration: 2.5, ease: "easeOut" }} className="fixed text-4xl md:text-5xl pointer-events-none z-50 left-1/2 bottom-0">
+            {anim.emoji}
+          </motion.div>
+        ))}
+      </AnimatePresence>
 
-                {/* Leaderboard */}
-                <div className="space-y-6">
-                  {Object.keys(leaderboardData).length === 0 ? (
-                    <div className={`p-8 text-center rounded-2xl border ${t.card} ${t.textMuted}`}>Aún no hay PRs con peso registrados.</div>
-                  ) : (
-                    Object.keys(leaderboardData).sort().map(ejercicio => (
-                      <div key={ejercicio} className={`rounded-2xl border overflow-hidden ${t.card}`}>
-                        <div className={`px-4 py-3 border-b ${theme === 'dark' ? 'border-slate-700' : 'border-slate-200'} bg-black/5 flex justify-between items-center`}>
-                          <h3 className="font-bold tracking-wide">{ejercicio}</h3>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full border ${t.accentBorder} ${t.accentText}`}>{getCategory(ejercicio)}</span>
-                        </div>
-                        <div className="p-0">
-                          {leaderboardData[ejercicio].map((pr, index) => (
-                            <motion.div key={pr.id} initial={{opacity:0}} animate={{opacity:1}} transition={{delay: index*0.05}}
-                              className={`flex items-center justify-between p-3 px-4 transition-colors border-b last:border-b-0
-                                ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-100'} ${index === 0 ? t.accentLightBg : 'hover:bg-black/5'}`}
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${index === 0 ? `${t.accentBg} text-white` : `${theme === 'dark' ? 'bg-slate-700' : 'bg-slate-200'}`}`}>
-                                  {index === 0 ? <Trophy size={14} /> : index + 1}
-                                </div>
-                                <div>
-                                  <p className={`font-bold leading-tight ${index === 0 ? t.accentText : ''}`}>{pr.nombre}</p>
-                                  <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>{formatDate(pr.fecha)}</p>
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <span className={`text-2xl font-black ${index === 0 ? t.accentText : ''}`}>
-                                  {pr.peso} <span className="text-sm font-medium opacity-70">kg</span>
-                                </span>
-                              </div>
-                            </motion.div>
-                          ))}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </motion.div>
-            )}
-
-            {/* VIEW 2: Analytics */}
-            {activeTab === 'analytics' && (
-              <motion.div key="analytics" initial={{opacity:0, scale:0.98}} animate={{opacity:1, scale:1}} className="space-y-6">
-                
-                {/* Advanced Filters */}
-                <div className={`p-4 md:p-6 rounded-2xl border ${t.card} flex flex-wrap gap-4 items-end`}>
-                  <div className="flex-1 min-w-[140px]">
-                    <label className={`block text-xs font-bold mb-1.5 flex items-center gap-1 ${t.textMuted}`}><Activity size={12}/> Persona</label>
-                    <select value={selectedUser} onChange={(e) => setSelectedUser(e.target.value)} className={`w-full p-2.5 rounded-lg border text-sm font-bold ${t.input}`}>
-                      <option value="" disabled>Selecciona...</option>
-                      {allUsers.map(u => <option key={u} value={u}>{u}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex-1 min-w-[140px]">
-                    <label className={`block text-xs font-bold mb-1.5 flex items-center gap-1 ${t.textMuted}`}><Filter size={12}/> Categoría</label>
-                    <select value={selectedCategory} onChange={(e) => {setSelectedCategory(e.target.value); setSelectedExerciseFilter('TODOS');}} className={`w-full p-2.5 rounded-lg border text-sm font-bold ${t.input}`}>
-                      {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex-1 min-w-[140px]">
-                    <label className={`block text-xs font-bold mb-1.5 flex items-center gap-1 ${t.textMuted}`}><Dumbbell size={12}/> Ejercicio</label>
-                    <select value={selectedExerciseFilter} onChange={(e) => setSelectedExerciseFilter(e.target.value)} className={`w-full p-2.5 rounded-lg border text-sm font-bold ${t.input}`} disabled={selectedCategory === 'TODOS'}>
-                      <option value="TODOS">TODOS</option>
-                      {ejerciciosLista.filter(ex => selectedCategory === 'TODOS' || getCategory(ex) === selectedCategory).map(ex => <option key={ex} value={ex}>{ex}</option>)}
-                    </select>
-                  </div>
-                  <div className="flex-1 min-w-[140px]">
-                    <label className={`block text-xs font-bold mb-1.5 flex items-center gap-1 ${t.textMuted}`}><Calendar size={12}/> Tiempo</label>
-                    <select value={selectedTime} onChange={(e) => setSelectedTime(e.target.value)} className={`w-full p-2.5 rounded-lg border text-sm font-bold ${t.input}`}>
-                      <option value="ALL">Histórico completo</option>
-                      <option value="7D">Últimos 7 días</option>
-                      <option value="30D">Últimos 30 días</option>
-                      <option value="90D">Últimos 3 meses</option>
-                      <option value="1Y">Último año</option>
-                    </select>
-                  </div>
-                </div>
-
-                {selectedUser ? (
-                  <div className="grid lg:grid-cols-2 gap-6">
-                    
-                    {/* CHART 1: Timeline of exercises & PRs */}
-                    <div className={`p-5 rounded-2xl border ${t.card} flex flex-col`}>
-                      <h3 className="text-sm md:text-base font-bold mb-2">Evolución de Entrenamientos y PRs</h3>
-                      <p className={`text-xs mb-4 ${t.textMuted}`}>Eje Y: Ejercicios realizados. Estrellas: PRs rotos (Oro=1, Plata=2, Cósmica=3+).</p>
-                      <div className="h-64 w-full mt-auto">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={chart1Data} margin={{ top: 15, right: 15, bottom: 5, left: -20 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#475569' : '#e2e8f0'} vertical={false} />
-                            <XAxis dataKey="dateFormatted" stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} tickLine={false} axisLine={false} dy={10} />
-                            <YAxis stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} tickLine={false} axisLine={false} dx={-10} allowDecimals={false} />
-                            <Tooltip contentStyle={{ backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', borderColor: theme === 'dark' ? '#334155' : '#e2e8f0', borderRadius: '8px', color: theme === 'dark' ? '#fff' : '#000', fontSize: '12px' }} />
-                            <Line type="monotone" dataKey="exerciseCount" name="Ejercicios" stroke={theme === 'dark' ? '#9b111e' : '#000080'} strokeWidth={3} activeDot={{ r: 6 }} dot={renderCustomStar} />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-
-                    {/* CHART 2: Inverted Histogram (Top PRs) */}
-                    <div className={`p-5 rounded-2xl border ${t.card}`}>
-                      <h3 className="text-sm md:text-base font-bold mb-4">Mejores Marcas (PRs) por Ejercicio</h3>
-                      <div className="w-full" style={{ height: Math.max(250, chart2Data.length * 40) }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={chart2Data} layout="vertical" margin={{ top: 0, right: 30, left: 30, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#475569' : '#e2e8f0'} horizontal={false} />
-                            <XAxis type="number" stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} hide />
-                            <YAxis dataKey="name" type="category" stroke={theme === 'dark' ? '#e2e8f0' : '#1e293b'} fontSize={10} width={100} tickLine={false} axisLine={false} />
-                            <Tooltip cursor={{fill: theme === 'dark' ? '#334155' : '#f1f5f9'}} contentStyle={{ backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', borderColor: theme === 'dark' ? '#334155' : '#e2e8f0', borderRadius: '8px', color: theme === 'dark' ? '#fff' : '#000' }} formatter={(val) => [`${val} kg`, 'PR Máximo']} />
-                            <Bar dataKey="peso" radius={[0, 4, 4, 0]}>
-                              {chart2Data.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={theme === 'dark' ? '#9b111e' : '#000080'} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-
-                    {/* CHART 3: Human Body Heatmap */}
-                    <div className={`p-5 rounded-2xl border ${t.card} flex flex-col items-center`}>
-                      <h3 className="text-sm md:text-base font-bold mb-2 w-full text-left">Mapa Muscular de Entrenamiento</h3>
-                      <p className={`text-xs mb-6 w-full text-left ${t.textMuted}`}>Volumen histórico. Clic en un grupo para ver su gráfica. Rojo = Más entrenado.</p>
-                      
-                      <div className="flex gap-8 justify-center items-center flex-wrap">
-                        {/* FRENTE */}
-                        <div className="relative group cursor-pointer text-center">
-                          <h4 className="text-xs font-bold mb-2 opacity-50">FRENTE</h4>
-                          <svg width="120" height="250" viewBox="0 0 100 200" className="drop-shadow-lg">
-                            {/* Head & Neck */}
-                            <circle cx="50" cy="25" r="14" fill={theme === 'dark' ? '#475569' : '#cbd5e1'} />
-                            <rect x="44" y="38" width="12" height="10" fill={theme === 'dark' ? '#475569' : '#cbd5e1'} />
-                            {/* HOMBROS (Front) */}
-                            <circle cx="28" cy="55" r="12" fill={getHeatmapColor(heatmapData.HOMBRO)} onClick={() => setSelectedMuscle('HOMBRO')} className="transition-all hover:brightness-125" />
-                            <circle cx="72" cy="55" r="12" fill={getHeatmapColor(heatmapData.HOMBRO)} onClick={() => setSelectedMuscle('HOMBRO')} className="transition-all hover:brightness-125" />
-                            {/* PECHO */}
-                            <path d="M 35 50 L 65 50 L 70 75 L 50 80 L 30 75 Z" fill={getHeatmapColor(heatmapData.PECHO)} onClick={() => setSelectedMuscle('PECHO')} className="transition-all hover:brightness-125" />
-                            {/* Abs/Core (Neutral) */}
-                            <path d="M 33 77 L 67 77 L 62 110 L 38 110 Z" fill={theme === 'dark' ? '#334155' : '#e2e8f0'} />
-                            {/* BICEPS (Front Arms) */}
-                            <rect x="18" y="65" width="14" height="35" rx="5" fill={getHeatmapColor(heatmapData.BICEPS)} onClick={() => setSelectedMuscle('BICEPS')} className="transition-all hover:brightness-125" />
-                            <rect x="68" y="65" width="14" height="35" rx="5" fill={getHeatmapColor(heatmapData.BICEPS)} onClick={() => setSelectedMuscle('BICEPS')} className="transition-all hover:brightness-125" />
-                            {/* Forearms & Hands */}
-                            <rect x="19" y="102" width="12" height="30" rx="4" fill={theme === 'dark' ? '#475569' : '#cbd5e1'} />
-                            <rect x="69" y="102" width="12" height="30" rx="4" fill={theme === 'dark' ? '#475569' : '#cbd5e1'} />
-                            {/* PIERNAS (Quads) */}
-                            <path d="M 38 112 L 49 112 L 49 160 L 36 160 Z" fill={getHeatmapColor(heatmapData.PIERNAS)} onClick={() => setSelectedMuscle('PIERNAS')} className="transition-all hover:brightness-125" />
-                            <path d="M 51 112 L 62 112 L 64 160 L 51 160 Z" fill={getHeatmapColor(heatmapData.PIERNAS)} onClick={() => setSelectedMuscle('PIERNAS')} className="transition-all hover:brightness-125" />
-                            <rect x="36" y="162" width="12" height="30" rx="3" fill={theme === 'dark' ? '#475569' : '#cbd5e1'} />
-                            <rect x="52" y="162" width="12" height="30" rx="3" fill={theme === 'dark' ? '#475569' : '#cbd5e1'} />
-                          </svg>
-                        </div>
-
-                        {/* ESPALDA */}
-                        <div className="relative group cursor-pointer text-center">
-                          <h4 className="text-xs font-bold mb-2 opacity-50">ESPALDA</h4>
-                          <svg width="120" height="250" viewBox="0 0 100 200" className="drop-shadow-lg">
-                            <circle cx="50" cy="25" r="14" fill={theme === 'dark' ? '#475569' : '#cbd5e1'} />
-                            <rect x="44" y="38" width="12" height="10" fill={theme === 'dark' ? '#475569' : '#cbd5e1'} />
-                            {/* HOMBROS (Back) */}
-                            <circle cx="28" cy="55" r="12" fill={getHeatmapColor(heatmapData.HOMBRO)} onClick={() => setSelectedMuscle('HOMBRO')} className="transition-all hover:brightness-125" />
-                            <circle cx="72" cy="55" r="12" fill={getHeatmapColor(heatmapData.HOMBRO)} onClick={() => setSelectedMuscle('HOMBRO')} className="transition-all hover:brightness-125" />
-                            {/* ESPALDA (Dorsals/Lats) */}
-                            <path d="M 32 50 L 68 50 L 62 110 L 38 110 Z" fill={getHeatmapColor(heatmapData.ESPALDA)} onClick={() => setSelectedMuscle('ESPALDA')} className="transition-all hover:brightness-125" />
-                            {/* TRICEPS (Back Arms) */}
-                            <rect x="18" y="65" width="14" height="35" rx="5" fill={getHeatmapColor(heatmapData.TRICEPS)} onClick={() => setSelectedMuscle('TRICEPS')} className="transition-all hover:brightness-125" />
-                            <rect x="68" y="65" width="14" height="35" rx="5" fill={getHeatmapColor(heatmapData.TRICEPS)} onClick={() => setSelectedMuscle('TRICEPS')} className="transition-all hover:brightness-125" />
-                            <rect x="19" y="102" width="12" height="30" rx="4" fill={theme === 'dark' ? '#475569' : '#cbd5e1'} />
-                            <rect x="69" y="102" width="12" height="30" rx="4" fill={theme === 'dark' ? '#475569' : '#cbd5e1'} />
-                            {/* PIERNAS (Hamstrings/Glutes) */}
-                            <path d="M 38 112 L 49 112 L 49 160 L 36 160 Z" fill={getHeatmapColor(heatmapData.PIERNAS)} onClick={() => setSelectedMuscle('PIERNAS')} className="transition-all hover:brightness-125" />
-                            <path d="M 51 112 L 62 112 L 64 160 L 51 160 Z" fill={getHeatmapColor(heatmapData.PIERNAS)} onClick={() => setSelectedMuscle('PIERNAS')} className="transition-all hover:brightness-125" />
-                            <rect x="36" y="162" width="12" height="30" rx="3" fill={theme === 'dark' ? '#475569' : '#cbd5e1'} />
-                            <rect x="52" y="162" width="12" height="30" rx="3" fill={theme === 'dark' ? '#475569' : '#cbd5e1'} />
-                          </svg>
-                        </div>
-                      </div>
-                      
-                      {/* Interactive Legend / Selector */}
-                      <div className="mt-6 flex flex-wrap gap-2 justify-center">
-                        {['PECHO', 'ESPALDA', 'HOMBRO', 'PIERNAS', 'BICEPS', 'TRICEPS'].map(m => (
-                          <button key={m} onClick={() => setSelectedMuscle(m)}
-                            className={`px-2 py-1 text-[10px] md:text-xs rounded-full border transition-all flex gap-1.5 items-center
-                            ${selectedMuscle === m ? `${t.accentBg} text-white border-transparent` : `${theme === 'dark' ? 'border-slate-600' : 'border-slate-300'}`}`}
-                          >
-                            <span className="w-2 h-2 rounded-full" style={{backgroundColor: getHeatmapColor(heatmapData[m])}}></span>
-                            {m}: {heatmapData[m]}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* CHART 4: Specific Muscle Timeline */}
-                    <div className={`p-5 rounded-2xl border ${t.card} flex flex-col`}>
-                      <h3 className="text-sm md:text-base font-bold mb-2">
-                        Frecuencia de {selectedMuscle ? <span className={t.accentText}>{selectedMuscle}</span> : "Músculo (Selecciona uno)"}
-                      </h3>
-                      <p className={`text-xs mb-4 ${t.textMuted}`}>Eje Y: Cantidad de ejercicios realizados por día para el grupo muscular seleccionado.</p>
-                      
-                      {selectedMuscle ? (
-                        <div className="h-64 w-full mt-auto">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={chart4Data} margin={{ top: 15, right: 15, bottom: 5, left: -20 }}>
-                              <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#475569' : '#e2e8f0'} vertical={false} />
-                              <XAxis dataKey="dateFormatted" stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} tickLine={false} axisLine={false} dy={10} />
-                              <YAxis stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} tickLine={false} axisLine={false} dx={-10} allowDecimals={false} />
-                              <Tooltip cursor={{fill: theme === 'dark' ? '#334155' : '#f1f5f9'}} contentStyle={{ backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', borderColor: theme === 'dark' ? '#334155' : '#e2e8f0', borderRadius: '8px', color: theme === 'dark' ? '#fff' : '#000', fontSize: '12px' }} formatter={(val) => [val, 'Ejercicios']} />
-                              <Bar dataKey="count" radius={[4, 4, 0, 0]} fill={getHeatmapColor(heatmapData[selectedMuscle])} />
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                      ) : (
-                        <div className={`flex-1 flex items-center justify-center text-sm ${t.textMuted} text-center p-4`}>
-                          Haz clic en el mapa corporal o en las etiquetas para ver el historial de entrenamiento de un grupo muscular.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div className={`p-12 text-center rounded-2xl border ${t.card} ${t.textMuted}`}>
-                    Selecciona un usuario en los filtros de arriba para cargar sus analíticas.
-                  </div>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        )}
+      <main className="max-w-5xl mx-auto p-4 py-6 md:py-8">
+        <AnimatePresence mode="wait">
+          <motion.div key={activeTab} initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-10}} transition={{duration:0.2}}>
+            {activeTab === 'inicio' && <InicioTab />}
+            {activeTab === 'rutinas' && <RutinasTab />}
+            {activeTab === 'ranking' && <RankingTab />}
+            {activeTab === 'analytics' && <AnalyticsTab />}
+          </motion.div>
+        </AnimatePresence>
       </main>
     </div>
   );
