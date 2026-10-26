@@ -2,17 +2,22 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
-  signInAnonymously, 
-  sendPasswordResetEmail 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  sendPasswordResetEmail,
+  onAuthStateChanged,
+  updateProfile,
+  GoogleAuthProvider,
+  signInWithPopup
 } from 'firebase/auth';
 import { 
-  getFirestore, collection, addDoc, onSnapshot, query, where, getDocs, doc, getDoc, deleteDoc, updateDoc 
+  getFirestore, collection, addDoc, onSnapshot, doc, getDoc, deleteDoc, updateDoc, setDoc 
 } from 'firebase/firestore';
 import { 
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell 
 } from 'recharts';
 import { 
-  Trophy, Activity, Dumbbell, Sun, Moon, Plus, Home, Calendar, Edit2, Copy, Trash2, Share2, Check, X, Filter, Sparkles, Mail, ShieldCheck, ArrowLeft 
+  Trophy, Activity, Dumbbell, Sun, Moon, Plus, Home, Calendar, Edit2, Copy, Trash2, Share2, Check, X, Filter, Sparkles, Mail, Lock, User, ArrowLeft 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -88,29 +93,9 @@ const CATEGORY_MAP = {
 
 const getCategory = (ej) => CATEGORY_MAP[ej?.toUpperCase()]?.cat || 'OTROS';
 const getMuscle = (ej) => CATEGORY_MAP[ej?.toUpperCase()]?.muscle || 'otros';
-const ejerciciosLista = Object.keys(CATEGORY_MAP);
+const ejerciciosListaInicial = Object.keys(CATEGORY_MAP);
 
-// --- Funciones Globales ---
-const hashPassword = async (pwd) => {
-  if (!pwd) return '';
-  try {
-    if (window.crypto && window.crypto.subtle && window.crypto.subtle.digest) {
-      const encoder = new TextEncoder();
-      const data = encoder.encode(pwd);
-      const hash = await window.crypto.subtle.digest('SHA-256', data);
-      return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
-    }
-  } catch (e) {
-    console.warn("Usando algoritmo de hash de respaldo");
-  }
-  let hash = 0;
-  for (let i = 0; i < pwd.length; i++) {
-    hash = ((hash << 5) - hash) + pwd.charCodeAt(i);
-    hash |= 0;
-  }
-  return 'sec_' + Math.abs(hash).toString(16);
-};
-
+// --- Sonidos ---
 const playClickSound = () => {
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -120,7 +105,7 @@ const playClickSound = () => {
     const gain = ctx.createGain();
     osc.type = 'sine';
     osc.frequency.setValueAtTime(440, ctx.currentTime);
-    gain.gain.setValueAtTime(0.03, ctx.currentTime);
+    gain.gain.setValueAtTime(0.02, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
     osc.connect(gain);
     gain.connect(ctx.destination);
@@ -140,7 +125,7 @@ const playSuccessSound = (isNewPr = false) => {
       const gain = ctx.createGain();
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.08);
-      gain.gain.setValueAtTime(0.08, ctx.currentTime + idx * 0.08);
+      gain.gain.setValueAtTime(0.05, ctx.currentTime + idx * 0.08);
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.08 + 0.2);
       osc.connect(gain);
       gain.connect(ctx.destination);
@@ -150,210 +135,158 @@ const playSuccessSound = (isNewPr = false) => {
   } catch (e) {}
 };
 
+// --- Colores Musculares (Gradiente Dinámico según Días) ---
 const getMuscleColorByDays = (lastTrainedDate) => {
-  if (!lastTrainedDate) return '#ef4444';
+  if (!lastTrainedDate) return '#ef4444'; // Rojo si nunca se entrenó o hace mucho
   const diffDays = (new Date() - new Date(lastTrainedDate)) / (1000 * 3600 * 24);
-  if (diffDays <= 9) return `hsl(${120 - (diffDays / 9) * 60}, 85%, 45%)`;
-  if (diffDays <= 18) return `hsl(${60 - ((diffDays - 9) / 9) * 30}, 90%, 50%)`;
-  if (diffDays <= 27) return `hsl(${30 - ((diffDays - 18) / 9) * 30}, 90%, 50%)`;
-  return '#ef4444';
-};
-
-const ANATOMY_PATHS = {
-  masculino: {
-    frente: [
-      { id: 'pecho', label: 'Pecho', d: 'M 74,52 Q 100,60 126,52 L 122,80 Q 100,85 78,80 Z' },
-      { id: 'hombros', label: 'Hombros', d: 'M 54,50 Q 70,48 74,52 L 72,74 Q 52,70 54,50 Z M 146,50 Q 130,48 126,52 L 128,74 Q 148,70 146,50 Z' },
-      { id: 'biceps', label: 'Bíceps', d: 'M 50,76 Q 66,74 68,98 Q 50,102 46,82 Z M 150,76 Q 134,74 132,98 Q 150,102 154,82 Z' },
-      { id: 'abdominales', label: 'Abdominales', d: 'M 78,84 Q 100,86 122,84 L 118,138 Q 100,142 82,138 Z' },
-      { id: 'cuadriceps', label: 'Cuádriceps', d: 'M 74,142 Q 96,144 96,188 L 74,188 Z M 126,142 Q 104,144 104,188 L 126,188 Z' },
-      { id: 'aductores', label: 'Aductores', d: 'M 96,146 L 98,184 L 92,184 Z M 104,146 L 102,184 L 108,184 Z' }
-    ],
-    espalda: [
-      { id: 'espalda', label: 'Espalda', d: 'M 70,50 Q 100,45 130,50 L 122,120 Q 100,126 78,120 Z' },
-      { id: 'triceps', label: 'Tríceps', d: 'M 48,72 Q 64,70 66,94 Q 48,98 44,78 Z M 152,72 Q 136,70 134,94 Q 152,98 156,78 Z' },
-      { id: 'gluteos', label: 'Glúteos', d: 'M 76,124 Q 100,126 100,154 L 74,150 Z M 124,124 Q 100,126 100,154 L 126,150 Z' },
-      { id: 'isquiotibiales', label: 'Isquiotibiales', d: 'M 74,154 Q 96,156 96,194 L 74,194 Z M 126,154 Q 104,156 104,194 L 126,194 Z' },
-      { id: 'gemelos', label: 'Gemelos', d: 'M 74,198 Q 94,198 90,230 L 76,230 Z M 126,198 Q 106,198 110,230 L 124,230 Z' }
-    ]
-  },
-  femenino: {
-    frente: [
-      { id: 'pecho', label: 'Pecho', d: 'M 76,54 Q 100,60 124,54 L 120,78 Q 100,82 80,78 Z' },
-      { id: 'hombros', label: 'Hombros', d: 'M 58,52 Q 72,50 76,54 L 74,72 Q 58,68 58,52 Z M 142,52 Q 128,50 124,54 L 126,72 Q 142,68 142,52 Z' },
-      { id: 'biceps', label: 'Bíceps', d: 'M 54,74 Q 68,72 68,94 Q 54,98 50,80 Z M 146,74 Q 132,72 132,94 Q 146,98 150,80 Z' },
-      { id: 'abdominales', label: 'Abdominales', d: 'M 80,80 Q 100,82 120,80 L 116,132 Q 100,136 84,132 Z' },
-      { id: 'cuadriceps', label: 'Cuádriceps', d: 'M 72,136 Q 96,138 96,184 L 72,184 Z M 128,136 Q 104,138 104,184 L 128,184 Z' },
-      { id: 'aductores', label: 'Aductores', d: 'M 96,138 L 98,180 L 90,180 Z M 104,138 L 102,180 L 110,180 Z' }
-    ],
-    espalda: [
-      { id: 'espalda', label: 'Espalda', d: 'M 72,52 Q 100,48 128,52 L 120,116 Q 100,122 80,116 Z' },
-      { id: 'triceps', label: 'Tríceps', d: 'M 52,70 Q 66,68 68,90 Q 52,94 48,76 Z M 148,70 Q 134,68 132,90 Q 148,94 152,76 Z' },
-      { id: 'gluteos', label: 'Glúteos', d: 'M 74,120 Q 100,124 100,154 L 72,148 Z M 126,120 Q 100,124 100,154 L 128,148 Z' },
-      { id: 'isquiotibiales', label: 'Isquiotibiales', d: 'M 72,152 Q 96,154 96,190 L 72,190 Z M 128,152 Q 104,154 104,190 L 128,190 Z' },
-      { id: 'gemelos', label: 'Gemelos', d: 'M 72,194 Q 92,194 88,226 L 74,226 Z M 128,194 Q 108,194 112,226 L 126,226 Z' }
-    ]
+  
+  if (diffDays <= 9) {
+    // 0 días = Verde brillante (120), 9 días = Verde amarillento (60)
+    const hue = 120 - (diffDays / 9) * 60;
+    return `hsl(${hue}, 85%, 45%)`;
+  } else if (diffDays <= 18) {
+    // 9 días = Amarillo (60), 18 días = Naranja (30)
+    const hue = 60 - ((diffDays - 9) / 9) * 30;
+    return `hsl(${hue}, 90%, 50%)`;
+  } else if (diffDays <= 27) {
+    // 18 días = Naranja (30), 27 días = Rojo (0)
+    const hue = 30 - ((diffDays - 18) / 9) * 30;
+    return `hsl(${hue}, 90%, 50%)`;
   }
+  return '#ef4444'; // >27 días = Rojo
 };
 
+// VECTORES ANATÓMICOS SUAVIZADOS
+const ANATOMY_PATHS = {
+  frente: [
+    { id: 'pecho', label: 'Pecho', d: 'M 75 55 C 85 55, 95 62, 100 62 C 105 62, 115 55, 125 55 C 130 65, 125 75, 100 75 C 75 75, 70 65, 75 55 Z' },
+    { id: 'hombros', label: 'Hombros', d: 'M 55 50 C 65 45, 75 50, 75 55 C 70 65, 60 70, 52 65 C 50 60, 50 55, 55 50 Z M 145 50 C 135 45, 125 50, 125 55 C 130 65, 140 70, 148 65 C 150 60, 150 55, 145 50 Z' },
+    { id: 'biceps', label: 'Bíceps', d: 'M 52 65 C 60 70, 65 80, 65 90 C 65 100, 55 105, 48 95 C 45 85, 48 70, 52 65 Z M 148 65 C 140 70, 135 80, 135 90 C 135 100, 145 105, 152 95 C 155 85, 152 70, 148 65 Z' },
+    { id: 'abdominales', label: 'Abdominales', d: 'M 78 78 C 100 82, 100 82, 122 78 C 120 100, 115 135, 100 140 C 85 135, 80 100, 78 78 Z' },
+    { id: 'cuadriceps', label: 'Cuádriceps', d: 'M 72 145 C 95 145, 95 160, 95 185 C 95 200, 80 205, 75 185 C 70 165, 68 150, 72 145 Z M 128 145 C 105 145, 105 160, 105 185 C 105 200, 120 205, 125 185 C 130 165, 132 150, 128 145 Z' },
+    { id: 'aductores', label: 'Aductores', d: 'M 95 145 C 100 150, 98 175, 95 185 C 92 175, 90 155, 95 145 Z M 105 145 C 100 150, 102 175, 105 185 C 108 175, 110 155, 105 145 Z' }
+  ],
+  espalda: [
+    { id: 'espalda', label: 'Espalda (Dorsales)', d: 'M 75 55 C 100 65, 100 65, 125 55 C 130 80, 115 110, 100 120 C 85 110, 70 80, 75 55 Z' },
+    { id: 'triceps', label: 'Tríceps', d: 'M 52 65 C 60 70, 68 85, 65 100 C 55 105, 45 90, 48 75 C 48 70, 50 67, 52 65 Z M 148 65 C 140 70, 132 85, 135 100 C 145 105, 155 90, 152 75 C 152 70, 150 67, 148 65 Z' },
+    { id: 'gluteos', label: 'Glúteos', d: 'M 75 125 C 100 120, 100 120, 125 125 C 130 145, 115 155, 100 155 C 85 155, 70 145, 75 125 Z' },
+    { id: 'isquiotibiales', label: 'Isquiotibiales', d: 'M 75 155 C 95 155, 95 170, 95 195 C 95 210, 80 205, 75 195 C 70 180, 70 165, 75 155 Z M 125 155 C 105 155, 105 170, 105 195 C 105 210, 120 205, 125 195 C 130 180, 130 165, 125 155 Z' },
+    { id: 'gemelos', label: 'Gemelos', d: 'M 75 200 C 95 200, 95 215, 90 235 C 85 245, 75 245, 70 235 C 65 220, 65 210, 75 200 Z M 125 200 C 105 200, 105 215, 110 235 C 115 245, 125 245, 130 235 C 135 220, 135 210, 125 200 Z' }
+  ]
+};
 
 // ==============================================================================
-// COMPONENTES EXTRAÍDOS (Para evitar el bug de re-render al escribir)
+// COMPONENTES EXTRAÍDOS
 // ==============================================================================
 
-const LoginScreen = ({ t, setCurrentUser, onTriggerAnimation }) => {
-  const [mode, setMode] = useState('login');
-  const [form, setForm] = useState({ username: '', email: '', password: '', confirmPassword: '', gender: 'masculino' });
-  const [otpInput, setOtpInput] = useState('');
-  const [generatedOtp, setGeneratedOtp] = useState('');
-  const [simulatedEmailBanner, setSimulatedEmailBanner] = useState(null);
-  const [resetUserId, setResetUserId] = useState(null);
+const LoginScreen = ({ t }) => {
+  const [mode, setMode] = useState('login'); // 'login', 'register', 'forgot'
+  const [form, setForm] = useState({ username: '', email: '', password: '', gender: 'masculino' });
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
 
-  const resetStates = () => { setError(''); setSuccessMsg(''); setOtpInput(''); };
-
   const handleSwitchMode = (targetMode) => {
     playClickSound();
-    resetStates();
-    setMode(targetMode);
+    setError(''); setSuccessMsg(''); setMode(targetMode);
   };
 
-  const sendOtpCode = async (recipientEmail, purpose) => {
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    setGeneratedOtp(code);
-    setSimulatedEmailBanner({ email: recipientEmail, code, purpose });
-    try {
-      await sendPasswordResetEmail(auth, recipientEmail);
-      setSuccessMsg(`Correo de verificación enviado a ${recipientEmail}. Revisa tu Spam.`);
-    } catch (err) {
-      setSuccessMsg(`Código generado. Usa el código mostrado arriba.`);
-    }
-    playSuccessSound(false);
-  };
-
-  const handleRegisterStep1 = async (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
     playClickSound();
-    resetStates();
+    setError('');
 
     if (!/^[a-zA-Z]+$/.test(form.username)) return setError("El usuario solo debe contener letras (sin espacios ni números).");
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return setError("Correo electrónico inválido.");
     if (form.password.length < 6) return setError("Mínimo 6 caracteres en la contraseña.");
 
-    setLoadingMessage("Verificando disponibilidad...");
+    setLoadingMessage("Creando perfil y validando correo...");
     setLoading(true);
 
     try {
-      const lowerUser = form.username.toLowerCase();
-      const lowerEmail = form.email.toLowerCase();
+      // 1. Create Firebase Auth user
+      const userCredential = await createUserWithEmailAndPassword(auth, form.email, form.password);
+      const user = userCredential.user;
+      
+      // 2. Update Auth Profile
+      await updateProfile(user, { displayName: form.username });
 
-      const qUser = query(collection(db, 'users'), where('username_lower', '==', lowerUser));
-      const snapsUser = await getDocs(qUser);
-      if (!snapsUser.empty) throw new Error("El nombre de usuario ya está registrado.");
+      // 3. Save extra user data in Firestore
+      await setDoc(doc(db, 'users', user.uid), {
+        username: form.username,
+        email: form.email,
+        gender: form.gender,
+        activeRoutineId: null
+      });
 
-      const qEmail = query(collection(db, 'users'), where('email_lower', '==', lowerEmail));
-      const snapsEmail = await getDocs(qEmail);
-      if (!snapsEmail.empty) throw new Error("Este correo ya está asociado a otra cuenta.");
-
-      await sendOtpCode(form.email, 'registro');
-      setMode('register_otp');
-    } catch (err) { setError(err.message); }
-    setLoading(false);
-  };
-
-  const handleVerifyRegisterOtp = async (e) => {
-    e.preventDefault();
-    playClickSound();
-    resetStates();
-
-    if (otpInput.trim() !== generatedOtp) return setError("Código incorrecto.");
-
-    setLoadingMessage("Creando perfil...");
-    setLoading(true);
-    try {
-      const lowerUser = form.username.toLowerCase();
-      const pHash = await hashPassword(form.password);
-      const newUser = { 
-        username: form.username, username_lower: lowerUser, email: form.email,
-        email_lower: form.email.toLowerCase(), passwordHash: pHash, gender: form.gender, activeRoutineId: null 
-      };
-      const docRef = await addDoc(collection(db, 'users'), newUser);
-      playSuccessSound(true);
-      onTriggerAnimation(true);
-      setCurrentUser({ id: docRef.id, ...newUser });
-      localStorage.setItem('gymTrackerSession', docRef.id);
-    } catch (err) { setError(err.message); }
-    setLoading(false);
+      // User will be automatically signed in, triggering the onAuthStateChanged in App.
+    } catch (err) {
+      if (err.code === 'auth/email-already-in-use') setError("El correo ya está en uso.");
+      else setError("Error al registrar: " + err.message);
+      setLoading(false);
+    }
   };
 
   const handleLogin = async (e) => {
     e.preventDefault();
     playClickSound();
-    resetStates();
-    setLoadingMessage("Iniciando sesión...");
+    setError('');
+    setLoadingMessage("Autenticando...");
     setLoading(true);
+
     try {
-      const lowerUser = form.username.toLowerCase();
-      const pHash = await hashPassword(form.password);
-      const q = query(collection(db, 'users'), where('username_lower', '==', lowerUser), where('passwordHash', '==', pHash));
-      const snaps = await getDocs(q);
-      if (snaps.empty) throw new Error("Usuario o contraseña incorrectos.");
-      setCurrentUser({ id: snaps.docs[0].id, ...snaps.docs[0].data() });
-      localStorage.setItem('gymTrackerSession', snaps.docs[0].id);
-    } catch (err) { setError(err.message); }
-    setLoading(false);
+      await signInWithEmailAndPassword(auth, form.email, form.password);
+      // Success will trigger onAuthStateChanged in App
+    } catch (err) {
+      setError("Correo o contraseña incorrectos.");
+      setLoading(false);
+    }
   };
 
-  const handleForgotRequest = async (e) => {
-    e.preventDefault();
-    playClickSound();
-    resetStates();
-    const identifier = form.username.trim().toLowerCase();
-    if (!identifier) return setError("Ingresa tu usuario o correo.");
-
-    setLoadingMessage("Buscando cuenta...");
-    setLoading(true);
-    try {
-      let q = query(collection(db, 'users'), where('username_lower', '==', identifier));
-      let snaps = await getDocs(q);
-      if (snaps.empty) {
-        q = query(collection(db, 'users'), where('email_lower', '==', identifier));
-        snaps = await getDocs(q);
-      }
-      if (snaps.empty) throw new Error("Cuenta no encontrada.");
-      
-      const userDocData = snaps.docs[0].data();
-      setResetUserId(snaps.docs[0].id);
-      if (!userDocData.email) throw new Error("La cuenta no tiene correo válido.");
-      await sendOtpCode(userDocData.email, 'recuperación de contraseña');
-      setMode('forgot_reset');
-    } catch (err) { setError(err.message); }
-    setLoading(false);
-  };
-
-  const handleResetPassword = async (e) => {
+  const handleForgot = async (e) => {
     e.preventDefault();
     playClickSound();
     setError('');
-    if (otpInput.trim() !== generatedOtp) return setError("Código incorrecto.");
-    if (form.password.length < 6) return setError("Mínimo 6 caracteres.");
-    if (form.password !== form.confirmPassword) return setError("Las contraseñas no coinciden.");
+    
+    if (!form.email) return setError("Ingresa tu correo electrónico.");
+    setLoadingMessage("Enviando enlace...");
+    setLoading(true);
 
-    setLoadingMessage("Actualizando contraseña...");
+    try {
+      await sendPasswordResetEmail(auth, form.email);
+      setSuccessMsg("¡Enlace enviado! Revisa tu bandeja de entrada o spam para restablecer tu contraseña.");
+      setForm({ ...form, password: '' });
+    } catch (err) {
+      setError("Error al enviar correo. Verifica que la dirección sea correcta.");
+    }
+    setLoading(false);
+  };
+
+  const handleGoogleLogin = async () => {
+    playClickSound();
+    setError('');
+    setLoadingMessage("Conectando con Google...");
     setLoading(true);
     try {
-      const newHash = await hashPassword(form.password);
-      await updateDoc(doc(db, 'users', resetUserId), { passwordHash: newHash });
-      playSuccessSound(true);
-      onTriggerAnimation(false);
-      setSuccessMsg("¡Contraseña actualizada!");
-      setForm({ username: '', email: '', password: '', confirmPassword: '', gender: 'masculino' });
-      setMode('login');
-      setSimulatedEmailBanner(null);
-    } catch (err) { setError("Error: " + err.message); }
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      
+      // Verificar si es la primera vez que entra para crearle su perfil en la app
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      if (!userDoc.exists()) {
+        await setDoc(doc(db, 'users', user.uid), {
+          username: user.displayName || user.email.split('@')[0],
+          email: user.email,
+          gender: 'masculino', // Valor por defecto, analíticas lo pueden usar
+          activeRoutineId: null
+        });
+      }
+    } catch (err) {
+      if (err.code !== 'auth/popup-closed-by-user') {
+        setError("Error al iniciar con Google: " + err.message);
+      }
+    }
     setLoading(false);
   };
 
@@ -365,86 +298,66 @@ const LoginScreen = ({ t, setCurrentUser, onTriggerAnimation }) => {
   );
 
   return (
-    <div className={`min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden ${t.bg} ${t.text}`}>
-      <AnimatePresence>
-        {simulatedEmailBanner && (
-          <motion.div 
-            initial={{ opacity: 0, y: -50 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -50 }}
-            className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-lg p-4 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 text-white shadow-2xl border border-white/20 backdrop-blur-lg flex flex-col sm:flex-row items-center justify-between gap-3"
-          >
-            <div className="flex items-center gap-3">
-              <Mail className="shrink-0 animate-bounce" size={28} />
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-amber-100">Código OTP Generado</p>
-                <p className="text-xs">Para {simulatedEmailBanner.email}:</p>
-                <p className="text-xl font-black tracking-widest text-white mt-0.5">{simulatedEmailBanner.code}</p>
-              </div>
-            </div>
-            <button 
-              onClick={() => { playClickSound(); navigator.clipboard.writeText(simulatedEmailBanner.code); setOtpInput(simulatedEmailBanner.code); }}
-              className="px-3 py-1.5 bg-white text-orange-600 font-bold text-xs rounded-xl hover:bg-orange-50 transition-transform active:scale-95 shadow"
-            >Copiar e Insertar</button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
+    <div className={`min-h-screen flex flex-col items-center justify-center p-4 ${t.bg} ${t.text}`}>
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className={`w-full max-w-md p-8 rounded-3xl border shadow-2xl ${t.card}`}>
         <div className="flex justify-center mb-4"><Dumbbell className={t.accentText} size={48} /></div>
         <h2 className={`text-2xl font-black text-center mb-1 ${t.text}`}>Incursores PR</h2>
-        <p className={`text-center text-xs mb-6 ${t.textMuted}`}>Guarda tus entrenamientos de forma segura</p>
+        <p className={`text-center text-xs mb-6 ${t.textMuted}`}>Registra tus rutinas y compara tus marcas</p>
 
         {error && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 text-red-500 rounded-xl text-sm text-center font-medium">{error}</div>}
         {successMsg && <div className="mb-4 p-3 bg-green-500/10 border border-green-500/50 text-green-500 rounded-xl text-sm text-center font-medium">{successMsg}</div>}
 
         {mode === 'login' && (
           <form onSubmit={handleLogin} className="space-y-4">
-            <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Usuario</label><input type="text" required value={form.username} onChange={e => setForm({...form, username: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} /></div>
+            <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Correo Electrónico</label><input type="email" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} /></div>
             <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Contraseña</label><input type="password" required value={form.password} onChange={e => setForm({...form, password: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} /></div>
-            <div className="text-right"><button type="button" onClick={() => handleSwitchMode('forgot_request')} className={`text-xs font-bold ${t.accentText} hover:underline`}>¿Olvidaste tu contraseña?</button></div>
-            <button type="submit" className={`w-full p-3 rounded-xl font-bold text-white transition-all active:scale-95 ${t.accentBg} ${t.accentHover}`}>Ingresar</button>
-            <div className="mt-6 text-center border-t pt-4 border-slate-500/20"><button type="button" onClick={() => handleSwitchMode('register_info')} className={`text-sm font-bold ${t.accentText} hover:underline`}>¿Nuevo aquí? Crea tu perfil</button></div>
+            <div className="text-right"><button type="button" onClick={() => handleSwitchMode('forgot')} className={`text-xs font-bold ${t.accentText} hover:underline`}>¿Olvidaste tu contraseña?</button></div>
+            <button type="submit" className={`w-full p-3 rounded-xl font-bold text-white transition-all hover:brightness-110 active:scale-95 ${t.accentBg}`}>Ingresar</button>
+            <div className="mt-6 text-center border-t pt-4 border-slate-500/20"><button type="button" onClick={() => handleSwitchMode('register')} className={`text-sm font-bold ${t.accentText} hover:underline`}>¿Nuevo aquí? Crea tu perfil</button></div>
+            <div className="relative flex py-3 items-center">
+              <div className="flex-grow border-t border-slate-500/20"></div>
+              <span className={`flex-shrink-0 mx-4 text-xs font-bold ${t.textMuted}`}>O continuar con</span>
+              <div className="flex-grow border-t border-slate-500/20"></div>
+            </div>
+            <button type="button" onClick={handleGoogleLogin} className={`w-full p-3 rounded-xl font-bold flex items-center justify-center gap-2 border transition-all hover:brightness-110 active:scale-95 ${t.card}`}>
+              <svg viewBox="0 0 24 24" width="20" height="20" xmlns="http://www.w3.org/2000/svg"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+              Google
+            </button>
+
+            <div className="mt-6 text-center border-t pt-4 border-slate-500/20"><button type="button" onClick={() => handleSwitchMode('register')} className={`text-sm font-bold ${t.accentText} hover:underline`}>¿Nuevo aquí? Crea tu perfil</button></div>
           </form>
         )}
 
-        {mode === 'register_info' && (
-          <form onSubmit={handleRegisterStep1} className="space-y-3">
+        {mode === 'register' && (
+          <form onSubmit={handleRegister} className="space-y-3">
             <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Usuario (Solo letras)</label><input type="text" required value={form.username} onChange={e => setForm({...form, username: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} /></div>
-            <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Correo</label><input type="email" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} /></div>
+            <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Correo Electrónico</label><input type="email" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} /></div>
             <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Contraseña</label><input type="password" required value={form.password} onChange={e => setForm({...form, password: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} /></div>
             <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Sexo Biológico</label>
               <select value={form.gender} onChange={e => setForm({...form, gender: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`}>
                 <option value="masculino">Masculino</option><option value="femenino">Femenino</option>
               </select>
             </div>
-            <button type="submit" className={`w-full p-3 mt-4 rounded-xl font-bold text-white transition-all active:scale-95 ${t.accentBg} ${t.accentHover}`}>Enviar Código</button>
+            <button type="submit" className={`w-full p-3 mt-4 rounded-xl font-bold text-white transition-all hover:brightness-110 active:scale-95 ${t.accentBg}`}>Crear Perfil</button>
+            <div className="relative flex py-3 items-center">
+              <div className="flex-grow border-t border-slate-500/20"></div>
+              <span className={`flex-shrink-0 mx-4 text-xs font-bold ${t.textMuted}`}>O crear con</span>
+              <div className="flex-grow border-t border-slate-500/20"></div>
+            </div>
+            <button type="button" onClick={handleGoogleLogin} className={`w-full p-3 rounded-xl font-bold flex items-center justify-center gap-2 border transition-all hover:scale-[1.02] active:scale-95 shadow-sm ${t.card}`}>
+              <svg viewBox="0 0 24 24" width="20" height="20" xmlns="http://www.w3.org/2000/svg"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+              Google
+            </button>
             <div className="text-center mt-4"><button type="button" onClick={() => handleSwitchMode('login')} className={`text-sm font-bold ${t.textMuted} hover:underline flex items-center justify-center gap-1 mx-auto`}><ArrowLeft size={16}/> Volver</button></div>
           </form>
         )}
 
-        {mode === 'register_otp' && (
-          <form onSubmit={handleVerifyRegisterOtp} className="space-y-4">
-            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-center"><ShieldCheck className="mx-auto text-amber-500 mb-1" size={32} /><p className="text-xs font-bold text-amber-500">Ingresa el código OTP enviado a tu correo</p></div>
-            <div><input type="text" maxLength={6} required value={otpInput} onChange={e => setOtpInput(e.target.value)} className={`w-full p-3 text-center text-2xl tracking-widest font-mono rounded-xl border outline-none ${t.input}`} placeholder="123456" /></div>
-            <button type="submit" className={`w-full p-3 rounded-xl font-bold text-white transition-all active:scale-95 ${t.accentBg} ${t.accentHover}`}>Verificar y Crear Perfil</button>
-            <div className="flex justify-between text-xs pt-2"><button type="button" onClick={() => sendOtpCode(form.email, 'registro')} className={`font-bold ${t.accentText}`}>Reenviar código</button><button type="button" onClick={() => handleSwitchMode('register_info')} className={`font-bold ${t.textMuted}`}>Cambiar correo</button></div>
-          </form>
-        )}
-
-        {mode === 'forgot_request' && (
-          <form onSubmit={handleForgotRequest} className="space-y-4">
-            <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Usuario o Correo</label><input type="text" required value={form.username} onChange={e => setForm({...form, username: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} /></div>
-            <button type="submit" className={`w-full p-3 rounded-xl font-bold text-white transition-all active:scale-95 ${t.accentBg} ${t.accentHover}`}>Enviar Código</button>
-            <div className="text-center mt-4"><button type="button" onClick={() => handleSwitchMode('login')} className={`text-sm font-bold ${t.textMuted} hover:underline flex items-center justify-center gap-1 mx-auto`}><ArrowLeft size={16}/> Volver</button></div>
-          </form>
-        )}
-
-        {mode === 'forgot_reset' && (
-          <form onSubmit={handleResetPassword} className="space-y-3">
-            <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Código de Verificación (6 dígitos)</label><input type="text" maxLength={6} required value={otpInput} onChange={e => setOtpInput(e.target.value)} className={`w-full p-3 text-center text-xl tracking-widest font-mono rounded-xl border outline-none ${t.input}`} /></div>
-            <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Nueva Contraseña</label><input type="password" required value={form.password} onChange={e => setForm({...form, password: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} /></div>
-            <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Confirmar Nueva Contraseña</label><input type="password" required value={form.confirmPassword} onChange={e => setForm({...form, confirmPassword: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} /></div>
-            <button type="submit" className={`w-full p-3 rounded-xl font-bold text-white transition-all active:scale-95 ${t.accentBg} ${t.accentHover}`}>Restablecer Contraseña</button>
-            <div className="text-center mt-4"><button type="button" onClick={() => handleSwitchMode('login')} className={`text-sm font-bold ${t.textMuted} hover:underline flex items-center justify-center gap-1 mx-auto`}><ArrowLeft size={16}/> Volver</button></div>
+        {mode === 'forgot' && (
+          <form onSubmit={handleForgot} className="space-y-4">
+            <p className={`text-sm ${t.textMuted} text-center`}>Te enviaremos un correo con un enlace seguro para restablecer tu contraseña.</p>
+            <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Correo Electrónico</label><input type="email" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} /></div>
+            <button type="submit" className={`w-full p-3 rounded-xl font-bold text-white transition-all hover:brightness-110 active:scale-95 ${t.accentBg}`}>Enviar enlace de recuperación</button>
+            <div className="text-center mt-4"><button type="button" onClick={() => handleSwitchMode('login')} className={`text-sm font-bold ${t.textMuted} hover:underline flex items-center justify-center gap-1 mx-auto`}><ArrowLeft size={16}/> Volver al Inicio de Sesión</button></div>
           </form>
         )}
       </motion.div>
@@ -479,7 +392,7 @@ const InicioTab = ({ currentUser, routines, prs, t, theme, onTriggerAnimation })
     });
 
     playSuccessSound(isNewPr);
-    onTriggerAnimation(isNewPr);
+    onTriggerAnimation(isNewPr ? 'pr' : 'random');
     setCompletingIdx(null);
     setKgInput('');
   };
@@ -519,12 +432,12 @@ const InicioTab = ({ currentUser, routines, prs, t, theme, onTriggerAnimation })
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
                     <input type="number" step="0.5" placeholder="Kg (Opcional)" value={kgInput} onChange={e => setKgInput(e.target.value)} className={`p-2 rounded-lg border w-full sm:w-32 ${t.input}`} />
                     <div className="flex gap-2">
-                      <button onClick={() => checkAndSubmitExercise(ex.ejercicio)} className={`flex-1 px-4 py-2 rounded-lg font-bold text-white transition-all active:scale-95 ${t.accentBg} ${t.accentHover}`}>Guardar</button>
-                      <button onClick={() => { playClickSound(); setCompletingIdx(null); }} className={`px-3 py-2 rounded-lg border ${theme === 'dark' ? 'border-slate-600 hover:bg-slate-700' : 'border-slate-300 hover:bg-slate-100'}`}><X size={20}/></button>
+                      <button onClick={() => checkAndSubmitExercise(ex.ejercicio)} className={`flex-1 px-4 py-2 rounded-lg font-bold text-white transition-all hover:brightness-110 active:scale-95 ${t.accentBg}`}>Guardar</button>
+                      <button onClick={() => { playClickSound(); setCompletingIdx(null); }} className={`px-3 py-2 rounded-lg border hover:brightness-90 transition-all ${theme === 'dark' ? 'border-slate-600 bg-slate-800' : 'border-slate-300 bg-slate-100'}`}><X size={20}/></button>
                     </div>
                   </div>
                 ) : (
-                  <button onClick={() => { playClickSound(); setCompletingIdx(idx); }} className={`px-6 py-2 rounded-lg font-bold border transition-all active:scale-95 self-start md:self-auto ${t.accentBorder} ${t.accentText} ${t.accentLightBg}`}>Completar</button>
+                  <button onClick={() => { playClickSound(); setCompletingIdx(idx); }} className={`px-6 py-2 rounded-lg font-bold border transition-all hover:brightness-110 active:scale-95 self-start md:self-auto ${t.accentBorder} ${t.accentText} ${t.accentLightBg}`}>Completar</button>
                 )}
               </motion.div>
             );
@@ -536,10 +449,8 @@ const InicioTab = ({ currentUser, routines, prs, t, theme, onTriggerAnimation })
 };
 
 
-const RutinasTab = ({ currentUser, routines, setCurrentUser, t, theme }) => {
+const RutinasTab = ({ currentUser, routines, ejerciciosLista, setEjerciciosLista, setCurrentUser, t, theme, setLoading, setLoadingMessage }) => {
   const [editingRoutine, setEditingRoutine] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [loadingMessage, setLoadingMessage] = useState('');
   const myRoutines = routines.filter(r => r.authorId === currentUser?.id);
 
   const openCreate = () => {
@@ -563,14 +474,24 @@ const RutinasTab = ({ currentUser, routines, setCurrentUser, t, theme }) => {
 
   const deleteRoutine = async (id) => {
     playClickSound();
-    if (window.confirm("¿Eliminar esta rutina para siempre?")) await deleteDoc(doc(db, 'routines', id));
+    if (window.confirm("¿Eliminar esta rutina para siempre?")) {
+      try {
+        await deleteDoc(doc(db, 'routines', id));
+        if (currentUser.activeRoutineId === id) {
+          await setActive(null);
+        }
+      } catch (err) { console.error("Error borrando:", err); }
+    }
   };
 
   const copyRoutine = async (rutina) => {
     playClickSound();
     setLoadingMessage("Duplicando rutina...");
     setLoading(true);
-    await addDoc(collection(db, 'routines'), { ...rutina, id: null, name: `${rutina.name} (Copia)` });
+    try {
+      const { id, ...dataCopy } = rutina;
+      await addDoc(collection(db, 'routines'), { ...dataCopy, name: `${rutina.name} (Copia)` });
+    } catch (e) {}
     setLoading(false);
   };
 
@@ -580,18 +501,11 @@ const RutinasTab = ({ currentUser, routines, setCurrentUser, t, theme }) => {
     setCurrentUser(prev => ({ ...prev, activeRoutineId: id }));
   };
 
-  if (loading) return (
-    <div className={`p-8 flex flex-col justify-center items-center rounded-2xl border ${t.card}`}>
-      <div className={`animate-spin rounded-full h-10 w-10 border-b-2 mb-4 ${t.accentBorder}`}></div>
-      <p className={`font-bold animate-pulse ${t.textMuted}`}>{loadingMessage}</p>
-    </div>
-  );
-
   if (editingRoutine) return (
     <div className={`p-4 md:p-6 rounded-2xl border ${t.card}`}>
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-bold">{editingRoutine.id ? 'Editar Rutina' : 'Nueva Rutina'}</h2>
-        <button onClick={() => { playClickSound(); setEditingRoutine(null); }} className={t.textMuted}><X/></button>
+        <button onClick={() => { playClickSound(); setEditingRoutine(null); }} className={`p-2 rounded-full hover:bg-black/10 transition-colors ${t.textMuted}`}><X/></button>
       </div>
       <input type="text" placeholder="Nombre de la rutina" value={editingRoutine.name} onChange={e => setEditingRoutine({...editingRoutine, name: e.target.value})} className={`w-full p-3 mb-6 rounded-xl border text-lg font-bold ${t.input}`} />
       <div className="space-y-6">
@@ -600,11 +514,16 @@ const RutinasTab = ({ currentUser, routines, setCurrentUser, t, theme }) => {
             <h3 className="font-bold capitalize mb-3 text-lg">{day}</h3>
             {editingRoutine.exercises[day].map((ex, idx) => (
               <div key={idx} className="flex flex-col md:flex-row gap-2 mb-3">
-                <input type="text" list="lista-ejercicios" placeholder="Ejercicio" value={ex.ejercicio} 
+                <input type="text" list="lista-ejercicios-rutina" placeholder="Ejercicio" value={ex.ejercicio} 
                   onChange={e => {
-                    const newEx = [...editingRoutine.exercises[day]]; newEx[idx].ejercicio = e.target.value;
+                    const newEx = [...editingRoutine.exercises[day]]; newEx[idx].ejercicio = e.target.value.toUpperCase();
                     setEditingRoutine({...editingRoutine, exercises: {...editingRoutine.exercises, [day]: newEx}});
-                  }} className={`flex-1 p-2.5 rounded-lg border ${t.input}`} />
+                  }} 
+                  onBlur={(e) => {
+                    const val = e.target.value.trim().toUpperCase();
+                    if (val && !ejerciciosLista.includes(val)) setEjerciciosLista(prev => [...prev, val]);
+                  }}
+                  className={`flex-1 p-2.5 rounded-lg border ${t.input}`} />
                 <input type="number" placeholder="Series" value={ex.series} 
                   onChange={e => {
                     const newEx = [...editingRoutine.exercises[day]]; newEx[idx].series = e.target.value;
@@ -615,36 +534,40 @@ const RutinasTab = ({ currentUser, routines, setCurrentUser, t, theme }) => {
                     const newEx = [...editingRoutine.exercises[day]]; newEx[idx].reps = e.target.value;
                     setEditingRoutine({...editingRoutine, exercises: {...editingRoutine.exercises, [day]: newEx}});
                   }} className={`w-full md:w-32 p-2.5 rounded-lg border ${t.input}`} />
-                <button onClick={() => { playClickSound(); const newEx = editingRoutine.exercises[day].filter((_, i) => i !== idx); setEditingRoutine({...editingRoutine, exercises: {...editingRoutine.exercises, [day]: newEx}}); }} className="p-2.5 text-red-500 bg-red-500/10 rounded-lg hover:bg-red-500/20"><Trash2 size={20}/></button>
+                <button onClick={() => { playClickSound(); const newEx = editingRoutine.exercises[day].filter((_, i) => i !== idx); setEditingRoutine({...editingRoutine, exercises: {...editingRoutine.exercises, [day]: newEx}}); }} className="p-2.5 text-red-500 bg-red-500/10 rounded-lg hover:bg-red-500/20 transition-colors"><Trash2 size={20}/></button>
               </div>
             ))}
             <button onClick={() => { playClickSound(); const newEx = [...editingRoutine.exercises[day], { ejercicio: '', series: '', reps: '' }]; setEditingRoutine({...editingRoutine, exercises: {...editingRoutine.exercises, [day]: newEx}}); }} className={`text-sm font-bold px-3 py-1.5 rounded-lg border transition-all active:scale-95 ${t.accentBorder} ${t.accentText} hover:bg-opacity-10`}>+ Ejercicio</button>
           </div>
         ))}
       </div>
-      <button onClick={saveRoutine} className={`w-full mt-6 p-4 rounded-xl font-bold text-white text-lg transition-all active:scale-95 ${t.accentBg} ${t.accentHover}`}>Guardar Rutina</button>
-      <datalist id="lista-ejercicios">{ejerciciosLista.map(e => <option key={e} value={e}/>)}</datalist>
+      <button onClick={saveRoutine} className={`w-full mt-6 p-4 rounded-xl font-bold text-white text-lg transition-all hover:brightness-110 active:scale-95 ${t.accentBg}`}>Guardar Rutina</button>
+      <datalist id="lista-ejercicios-rutina">{ejerciciosLista.map(e => <option key={e} value={e}/>)}</datalist>
     </div>
   );
 
   return (
     <div className="space-y-4">
-      <button onClick={openCreate} className={`w-full p-4 rounded-2xl border border-dashed flex justify-center items-center gap-2 font-bold transition-all active:scale-95 ${theme === 'dark' ? 'border-slate-600' : 'border-slate-300'}`}><Plus/> Crear Nueva Rutina</button>
+      <button onClick={openCreate} className={`w-full p-4 rounded-2xl border border-dashed flex justify-center items-center gap-2 font-bold transition-all hover:bg-black/5 active:scale-95 ${theme === 'dark' ? 'border-slate-600 hover:bg-white/5' : 'border-slate-300'}`}><Plus/> Crear Nueva Rutina</button>
       {myRoutines.length === 0 ? <p className={`text-center p-8 ${t.textMuted}`}>No tienes rutinas. Crea la primera.</p> : (
         <div className="grid md:grid-cols-2 gap-4">
           {myRoutines.map(r => {
             const isActive = currentUser?.activeRoutineId === r.id;
             return (
-              <div key={r.id} className={`p-5 rounded-2xl border relative overflow-hidden transition-all ${t.card} ${isActive ? `ring-2 ring-[#e53935]` : ''}`}>
+              <div key={r.id} className={`p-5 rounded-2xl border relative overflow-hidden transition-all ${t.card} ${isActive ? `ring-2 ring-opacity-100 ring-[#e53935]` : ''}`}>
                 {isActive && <div className={`absolute top-0 right-0 px-3 py-1 text-[10px] font-bold text-white rounded-bl-lg ${t.accentBg}`}>ACTIVA</div>}
                 <h3 className="text-xl font-bold mb-1 pr-16">{r.name}</h3>
                 <p className={`text-xs mb-4 ${t.textMuted}`}>Por {r.authorName}</p>
                 <div className="flex flex-wrap gap-2">
-                  <button onClick={() => { playClickSound(); setEditingRoutine(r); }} className={`p-2 rounded-lg bg-black/5 hover:bg-black/10`}><Edit2 size={16}/></button>
-                  <button onClick={() => copyRoutine(r)} className={`p-2 rounded-lg bg-black/5 hover:bg-black/10`}><Copy size={16}/></button>
-                  <button onClick={() => { playClickSound(); navigator.clipboard.writeText(`${window.location.origin}?shareRoutine=${r.id}`); alert("¡Link de rutina copiado!"); }} className={`p-2 rounded-lg bg-black/5 hover:bg-black/10`}><Share2 size={16}/></button>
-                  <button onClick={() => deleteRoutine(r.id)} className={`p-2 rounded-lg text-red-500 bg-red-500/10 hover:bg-red-500/20`}><Trash2 size={16}/></button>
-                  {!isActive && <button onClick={() => setActive(r.id)} className={`ml-auto px-4 py-1.5 text-sm font-bold rounded-lg border transition-all active:scale-95 ${t.accentText} ${t.accentBorder}`}>Activar</button>}
+                  <button onClick={() => { playClickSound(); setEditingRoutine(r); }} className={`p-2 rounded-lg bg-black/5 hover:bg-black/10 transition-colors`}><Edit2 size={16}/></button>
+                  <button onClick={() => copyRoutine(r)} className={`p-2 rounded-lg bg-black/5 hover:bg-black/10 transition-colors`}><Copy size={16}/></button>
+                  <button onClick={() => { 
+                    playClickSound(); 
+                    const url = `${window.location.origin}?shareRoutine=${r.id}`;
+                    navigator.clipboard.writeText(url).then(() => alert("¡Link de rutina copiado!\nCompártelo con tus amigos para que la importen.")); 
+                  }} className={`p-2 rounded-lg bg-black/5 hover:bg-black/10 transition-colors`}><Share2 size={16}/></button>
+                  <button onClick={() => deleteRoutine(r.id)} className={`p-2 rounded-lg text-red-500 bg-red-500/10 hover:bg-red-500/20 transition-colors`}><Trash2 size={16}/></button>
+                  {!isActive && <button onClick={() => setActive(r.id)} className={`ml-auto px-4 py-1.5 text-sm font-bold rounded-lg border transition-all hover:brightness-110 active:scale-95 ${t.accentText} ${t.accentBorder}`}>Activar</button>}
                 </div>
               </div>
             );
@@ -673,7 +596,7 @@ const RankingTab = ({ prs, t, theme }) => {
       return Object.keys(grouped).sort().map(ej => {
         const stats = usersSet.map(u => ({ name: u, max: grouped[ej][u] || null })).sort((a,b) => (b.max||0) - (a.max||0));
         return (
-          <div key={ej} className={`rounded-2xl border mb-6 overflow-hidden ${t.card}`}>
+          <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} key={ej} className={`rounded-2xl border mb-6 overflow-hidden ${t.card}`}>
             <div className={`px-4 py-3 bg-black/5 border-b ${theme === 'dark' ? 'border-slate-700' : 'border-slate-200'}`}><h3 className="font-bold">{ej}</h3></div>
             {stats.map((s, i) => (
               <div key={s.name} className={`flex justify-between p-3 px-4 border-b last:border-b-0 ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-100'} ${i===0 && s.max ? t.accentLightBg : ''}`}>
@@ -684,7 +607,7 @@ const RankingTab = ({ prs, t, theme }) => {
                 <span className="font-black opacity-80">{s.max ? `${s.max} kg` : <span className="text-xs font-normal opacity-50">Sin información</span>}</span>
               </div>
             ))}
-          </div>
+          </motion.div>
         );
       });
     }
@@ -696,15 +619,15 @@ const RankingTab = ({ prs, t, theme }) => {
         prs.filter(p => getMuscle(p.ejercicio) === m).forEach(p => counts[p.nombre] = (counts[p.nombre] || 0) + 1);
         const stats = usersSet.map(u => ({ name: u, count: counts[u] || 0 })).sort((a,b) => b.count - a.count);
         return (
-          <div key={m} className={`rounded-2xl border mb-6 overflow-hidden ${t.card}`}>
-            <div className={`px-4 py-3 bg-black/5 border-b ${theme === 'dark' ? 'border-slate-700' : 'border-slate-200'}`}><h3 className="font-bold">{m}</h3></div>
+          <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} key={m} className={`rounded-2xl border mb-6 overflow-hidden ${t.card}`}>
+            <div className={`px-4 py-3 bg-black/5 border-b ${theme === 'dark' ? 'border-slate-700' : 'border-slate-200'}`}><h3 className="font-bold capitalize">{m}</h3></div>
             {stats.map((s, i) => (
               <div key={s.name} className={`flex justify-between p-3 px-4 border-b last:border-b-0 ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-100'} ${i===0 && s.count>0 ? t.accentLightBg : ''}`}>
                 <span className="font-bold">{s.name}</span>
                 <span className="opacity-80">{s.count} ejercicios</span>
               </div>
             ))}
-          </div>
+          </motion.div>
         );
       });
     }
@@ -715,7 +638,7 @@ const RankingTab = ({ prs, t, theme }) => {
       prs.filter(p => new Date(p.fecha) >= d8).forEach(p => counts[p.nombre] = (counts[p.nombre] || 0) + 1);
       const stats = usersSet.map(u => ({ name: u, count: counts[u] || 0 })).sort((a,b) => b.count - a.count);
       return (
-        <div className={`rounded-2xl border overflow-hidden ${t.card}`}>
+        <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} className={`rounded-2xl border overflow-hidden ${t.card}`}>
           <div className={`px-4 py-3 bg-black/5 border-b ${theme === 'dark' ? 'border-slate-700' : 'border-slate-200'}`}><h3 className="font-bold">Ejercicios últimos 8 días</h3></div>
           {stats.map((s, i) => (
             <div key={s.name} className={`flex justify-between p-3 px-4 border-b last:border-b-0 ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-100'} ${i===0 && s.count>0 ? t.accentLightBg : ''}`}>
@@ -726,7 +649,7 @@ const RankingTab = ({ prs, t, theme }) => {
               <span className="font-black opacity-80">{s.count} <span className="text-xs font-normal">ejercicios</span></span>
             </div>
           ))}
-        </div>
+        </motion.div>
       );
     }
   };
@@ -746,30 +669,32 @@ const RankingTab = ({ prs, t, theme }) => {
 };
 
 
-const AnalyticsTab = ({ prs, currentUser, t, theme }) => {
+const AnalyticsTab = ({ prs, currentUser, ejerciciosLista, t, theme }) => {
   const allUsers = Array.from(new Set(prs.map(p => p.nombre))).sort();
-  const [selectedUser, setSelectedUser] = useState('');
+  
+  // States
+  const [selectedUsers, setSelectedUsers] = useState([]); // [] = Todos
   const [selectedCategory, setSelectedCategory] = useState('TODOS');
   const [selectedExercise, setSelectedExercise] = useState('TODOS');
-  const [selectedMuscle, setSelectedMuscle] = useState('TODOS');
+  const [selectedMuscleFilter, setSelectedMuscleFilter] = useState('TODOS');
   const [timeRange, setTimeRange] = useState('TODOS');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [svgView, setSvgView] = useState('frente');
   const [hoveredMuscle, setHoveredMuscle] = useState(null);
   const [clickedMuscle, setClickedMuscle] = useState(null);
 
-  const activeSelectedUser = selectedUser || currentUser?.username || '';
-  const targetGender = activeSelectedUser ? (activeSelectedUser === currentUser?.username ? currentUser.gender : 'masculino') : 'masculino';
-  const activePaths = ANATOMY_PATHS[targetGender][svgView];
+  const toggleUser = (u) => {
+    playClickSound();
+    setSelectedUsers(prev => prev.includes(u) ? prev.filter(x => x !== u) : [...prev, u]);
+  };
 
+  // Base Data Filter
   const filteredPrs = useMemo(() => {
-    if (!activeSelectedUser) return [];
     return prs.filter(p => {
-      if (p.nombre !== activeSelectedUser) return false;
+      if (selectedUsers.length > 0 && !selectedUsers.includes(p.nombre)) return false;
       if (selectedCategory !== 'TODOS' && getCategory(p.ejercicio) !== selectedCategory) return false;
       if (selectedExercise !== 'TODOS' && p.ejercicio !== selectedExercise) return false;
-      if (selectedMuscle !== 'TODOS' && getMuscle(p.ejercicio) !== selectedMuscle) return false;
+      if (selectedMuscleFilter !== 'TODOS' && getMuscle(p.ejercicio) !== selectedMuscleFilter) return false;
       
       const prDate = new Date(p.fecha);
       if (timeRange === '7D') {
@@ -787,63 +712,73 @@ const AnalyticsTab = ({ prs, currentUser, t, theme }) => {
       }
       return true;
     });
-  }, [prs, activeSelectedUser, selectedCategory, selectedExercise, selectedMuscle, timeRange, startDate, endDate]);
+  }, [prs, selectedUsers, selectedCategory, selectedExercise, selectedMuscleFilter, timeRange, startDate, endDate]);
 
+  // Heatmap Data (Last trained dates for colors, counts for tooltip)
   const muscleLastTrained = useMemo(() => {
     const dates = {};
-    const userPrs = prs.filter(p => p.nombre === activeSelectedUser);
-    userPrs.forEach(p => {
+    filteredPrs.forEach(p => {
       const m = getMuscle(p.ejercicio);
       if (!dates[m] || new Date(p.fecha) > new Date(dates[m])) dates[m] = p.fecha;
     });
     return dates;
-  }, [prs, activeSelectedUser]);
+  }, [filteredPrs]);
 
   const muscleCounts = useMemo(() => {
     const counts = {};
-    const userPrs = prs.filter(p => p.nombre === activeSelectedUser);
-    userPrs.forEach(p => {
+    filteredPrs.forEach(p => {
       const m = getMuscle(p.ejercicio);
       counts[m] = (counts[m] || 0) + 1;
     });
     return counts;
-  }, [prs, activeSelectedUser]);
+  }, [filteredPrs]);
 
+  // Chart 1: Evolution (Stars)
   const chart1Data = useMemo(() => {
     const datesMap = {};
     const cumulativeMaxes = {};
-    filteredPrs.forEach(p => {
+    
+    // Process chronologically to find exact PR moments
+    const sortedPrs = [...filteredPrs].sort((a,b) => new Date(a.fecha) - new Date(b.fecha));
+    
+    sortedPrs.forEach(p => {
       const dKey = p.fecha.split('T')[0];
       if (!datesMap[dKey]) datesMap[dKey] = { date: dKey, count: 0, prCount: 0 };
-      datesMap[dKey].count += 1;
+      datesMap[dKey].count += 1; // Count all exercises done this day
+
       if (p.peso !== null) {
-        const currentMax = cumulativeMaxes[p.ejercicio] || 0;
+        // Track max by user AND exercise to be accurate
+        const userExKey = `${p.nombre}-${p.ejercicio}`;
+        const currentMax = cumulativeMaxes[userExKey] || 0;
         if (p.peso > currentMax) {
           datesMap[dKey].prCount += 1;
-          cumulativeMaxes[p.ejercicio] = p.peso;
+          cumulativeMaxes[userExKey] = p.peso;
         }
       }
     });
-    return Object.values(datesMap).sort((a,b) => new Date(a.date) - new Date(b.date)).map(d => ({
+    return Object.values(datesMap).map(d => ({
       ...d, dateFormatted: new Date(d.date).toLocaleDateString([], { day: '2-digit', month: '2-digit' })
     }));
   }, [filteredPrs]);
 
+  // Chart 2: Histogram
   const chart2Data = useMemo(() => {
-    const exercisePrs = {};
+    const exerciseMaxes = {};
     filteredPrs.forEach(p => {
       if (p.peso !== null) {
-        if (!exercisePrs[p.ejercicio] || p.peso > exercisePrs[p.ejercicio]) exercisePrs[p.ejercicio] = p.peso;
+        if (!exerciseMaxes[p.ejercicio] || p.peso > exerciseMaxes[p.ejercicio]) {
+          exerciseMaxes[p.ejercicio] = p.peso;
+        }
       }
     });
-    return Object.keys(exercisePrs).map(ex => ({ ejercicio: ex, peso: exercisePrs[ex] })).sort((a,b) => b.peso - a.peso);
+    return Object.keys(exerciseMaxes).map(ex => ({ ejercicio: ex, peso: exerciseMaxes[ex] })).sort((a,b) => b.peso - a.peso);
   }, [filteredPrs]);
 
+  // Chart 4: Muscle specific
   const chart4Data = useMemo(() => {
     if (!clickedMuscle) return [];
-    const userMusclePrs = prs.filter(p => p.nombre === activeSelectedUser && getMuscle(p.ejercicio) === clickedMuscle);
     const datesMap = {};
-    userMusclePrs.forEach(p => {
+    filteredPrs.filter(p => getMuscle(p.ejercicio) === clickedMuscle).forEach(p => {
       const dKey = p.fecha.split('T')[0];
       if (!datesMap[dKey]) datesMap[dKey] = { date: dKey, count: 0 };
       datesMap[dKey].count += 1;
@@ -851,17 +786,20 @@ const AnalyticsTab = ({ prs, currentUser, t, theme }) => {
     return Object.values(datesMap).sort((a,b) => new Date(a.date) - new Date(b.date)).map(d => ({
       ...d, dateFormatted: new Date(d.date).toLocaleDateString([], { day: '2-digit', month: '2-digit' })
     }));
-  }, [prs, activeSelectedUser, clickedMuscle]);
+  }, [filteredPrs, clickedMuscle]);
 
   const renderStarDot = (props) => {
     const { cx, cy, payload, index } = props;
-    const uniqueKey = `star-dot-${cx}-${cy}-${index}`;
+    const uniqueKey = `star-dot-${index}-${cx}`;
     if (!payload || payload.prCount === 0) return <circle key={uniqueKey} cx={cx} cy={cy} r={4} fill={theme === 'dark' ? '#e53935' : '#1565c0'} />;
-    const starType = payload.prCount === 1 ? 'gold' : payload.prCount === 2 ? 'platinum' : 'cosmic';
-    const colors = { gold: '#FFD700', platinum: '#E5E4E2', cosmic: '#FF00FF' };
+    
+    let starColor = '#FFD700'; // Oro (1 PR)
+    if (payload.prCount === 2) starColor = '#E5E4E2'; // Platino (2 PR)
+    if (payload.prCount >= 3) starColor = '#FF00FF'; // Cósmica (3+ PR)
+
     return (
       <g key={uniqueKey} transform={`translate(${cx - 10}, ${cy - 10})`}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill={colors[starType]} stroke="#000" strokeWidth="1" className="drop-shadow-md animate-pulse">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill={starColor} stroke="#000" strokeWidth="1" className="drop-shadow-md animate-pulse">
           <polygon points="12,2 15,9 22,9 16,14 18,21 12,17 6,21 8,14 2,9 9,9" />
         </svg>
       </g>
@@ -870,18 +808,32 @@ const AnalyticsTab = ({ prs, currentUser, t, theme }) => {
 
   return (
     <div className="space-y-6">
+      {/* FILTROS */}
       <div className={`p-4 md:p-6 rounded-2xl border ${t.card} space-y-4`}>
         <div className="flex items-center gap-2 border-b pb-3 border-slate-500/20">
           <Filter className={t.accentText} size={20} />
           <h3 className="font-bold text-lg">Filtros Avanzados</h3>
         </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Persona</label><select value={activeSelectedUser} onChange={e => { playClickSound(); setSelectedUser(e.target.value); }} className={`w-full p-2.5 rounded-lg border text-sm font-bold outline-none ${t.input}`}>{allUsers.map(u => <option key={u} value={u}>{u}</option>)}</select></div>
-          <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Categoría</label><select value={selectedCategory} onChange={e => { playClickSound(); setSelectedCategory(e.target.value); setSelectedExercise('TODOS'); }} className={`w-full p-2.5 rounded-lg border text-sm font-bold outline-none ${t.input}`}><option value="TODOS">TODAS</option>{Array.from(new Set(Object.values(CATEGORY_MAP).map(v => v.cat))).sort().map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-          <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Ejercicio</label><select value={selectedExercise} onChange={e => { playClickSound(); setSelectedExercise(e.target.value); }} className={`w-full p-2.5 rounded-lg border text-sm font-bold outline-none ${t.input}`}><option value="TODOS">TODOS</option>{ejerciciosLista.filter(e => selectedCategory === 'TODOS' || getCategory(e) === selectedCategory).sort().map(ex => <option key={ex} value={ex}>{ex}</option>)}</select></div>
-          <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Músculo</label><select value={selectedMuscle} onChange={e => { playClickSound(); setSelectedMuscle(e.target.value); }} className={`w-full p-2.5 rounded-lg border text-sm font-bold outline-none ${t.input}`}><option value="TODOS">TODOS</option>{Array.from(new Set(Object.values(CATEGORY_MAP).map(v => v.muscle))).sort().map(m => <option key={m} value={m}>{m}</option>)}</select></div>
+        
+        <div>
+          <label className={`block text-xs font-bold mb-2 ${t.textMuted}`}>Perfiles Analizados (Múltiple Selección)</label>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => { playClickSound(); setSelectedUsers([]); }} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${selectedUsers.length === 0 ? `${t.accentBg} text-white` : 'bg-black/10'}`}>Todos</button>
+            {allUsers.map(u => (
+              <button key={u} onClick={() => toggleUser(u)} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all ${selectedUsers.includes(u) ? `${t.accentBg} text-white` : 'bg-black/10'}`}>
+                {u}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="flex flex-wrap gap-3 items-center pt-2">
+
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Categoría</label><select value={selectedCategory} onChange={e => { playClickSound(); setSelectedCategory(e.target.value); setSelectedExercise('TODOS'); }} className={`w-full p-2.5 rounded-lg border text-sm font-bold outline-none ${t.input}`}><option value="TODOS">TODAS</option>{Array.from(new Set(Object.values(CATEGORY_MAP).map(v => v.cat))).sort().map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+          <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Músculo Particular</label><select value={selectedMuscleFilter} onChange={e => { playClickSound(); setSelectedMuscleFilter(e.target.value); }} className={`w-full p-2.5 rounded-lg border text-sm font-bold outline-none ${t.input}`}><option value="TODOS">TODOS</option>{Array.from(new Set(Object.values(CATEGORY_MAP).map(v => v.muscle))).sort().map(m => <option key={m} value={m} className="capitalize">{m}</option>)}</select></div>
+          <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Ejercicio</label><select value={selectedExercise} onChange={e => { playClickSound(); setSelectedExercise(e.target.value); }} className={`w-full p-2.5 rounded-lg border text-sm font-bold outline-none ${t.input}`}><option value="TODOS">TODOS</option>{ejerciciosLista.filter(e => selectedCategory === 'TODOS' || getCategory(e) === selectedCategory).sort().map(ex => <option key={ex} value={ex}>{ex}</option>)}</select></div>
+        </div>
+        
+        <div className="flex flex-wrap gap-3 items-center pt-2 border-t border-slate-500/10 mt-2">
           <span className={`text-xs font-bold ${t.textMuted}`}>Tiempo:</span>
           {['TODOS', '7D', '30D', '1Y', 'CUSTOM'].map(r => (
             <button key={r} onClick={() => { playClickSound(); setTimeRange(r); }} className={`px-3 py-1 rounded-lg text-xs font-bold transition-all active:scale-95 ${timeRange === r ? `${t.accentBg} text-white` : 'bg-black/5 hover:bg-black/10'}`}>
@@ -897,133 +849,161 @@ const AnalyticsTab = ({ prs, currentUser, t, theme }) => {
         </div>
       </div>
 
-      <div className={`p-4 md:p-6 rounded-2xl border ${t.card}`}>
+      {/* CHART 1 */}
+      <motion.div initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} className={`p-4 md:p-6 rounded-2xl border ${t.card}`}>
         <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
-          <h3 className="font-bold text-lg">Progreso de Actividad y Récords</h3>
-          <div className="flex gap-3 text-xs">
-            <span className="flex items-center gap-1"><span className="text-amber-400">★</span> 1 PR</span>
-            <span className="flex items-center gap-1"><span className="text-slate-300">★</span> 2 PRs</span>
-            <span className="flex items-center gap-1"><span className="text-pink-500">★</span> 3+ PRs</span>
+          <h3 className="font-bold text-lg">Evolución (Ejercicios x Día) y Récords</h3>
+          <div className="flex gap-3 text-xs bg-black/10 px-3 py-1.5 rounded-full">
+            <span className="flex items-center gap-1 font-bold"><span className="text-[#FFD700]">★</span> Oro (1 PR)</span>
+            <span className="flex items-center gap-1 font-bold"><span className="text-[#E5E4E2]">★</span> Platino (2 PR)</span>
+            <span className="flex items-center gap-1 font-bold"><span className="text-[#FF00FF]">★</span> Cósmica (3+ PR)</span>
           </div>
         </div>
         <div className="h-64 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chart1Data} margin={{ top: 15, right: 10, bottom: 5, left: -20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#334155' : '#e2e8f0'} vertical={false} />
-              <XAxis dataKey="dateFormatted" stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} axisLine={false} tickLine={false} dy={10} />
-              <YAxis stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} axisLine={false} tickLine={false} allowDecimals={false} dx={-10} />
-              <Tooltip contentStyle={{ backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', borderRadius: '12px', borderColor: '#475569', color: theme === 'dark' ? '#fff' : '#000' }} formatter={(val, name, item) => [`${val} ejercicios (${item.payload.prCount} PRs)`, 'Actividad']} />
-              <Line type="monotone" dataKey="count" stroke={theme === 'dark' ? '#e53935' : '#1565c0'} strokeWidth={3} dot={renderStarDot} activeDot={{ r: 7 }} />
-            </LineChart>
-          </ResponsiveContainer>
+          {chart1Data.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chart1Data} margin={{ top: 15, right: 10, bottom: 5, left: -20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#334155' : '#e2e8f0'} vertical={false} />
+                <XAxis dataKey="dateFormatted" stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} axisLine={false} tickLine={false} dy={10} />
+                <YAxis stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} axisLine={false} tickLine={false} allowDecimals={false} dx={-10} />
+                <Tooltip contentStyle={{ backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', borderRadius: '12px', borderColor: '#475569', color: theme === 'dark' ? '#fff' : '#000' }} formatter={(val, name, item) => [`${val} ejercicios (Récords: ${item.payload.prCount})`, 'Volumen']} />
+                <Line type="monotone" dataKey="count" stroke={theme === 'dark' ? '#e53935' : '#1565c0'} strokeWidth={3} dot={renderStarDot} activeDot={{ r: 7 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : <p className="text-center mt-20 opacity-50 font-bold">No hay datos en este filtro.</p>}
         </div>
-      </div>
+      </motion.div>
 
       <div className="grid lg:grid-cols-2 gap-6">
-        <div className={`p-4 md:p-6 rounded-2xl border ${t.card} flex flex-col`}>
-          <h3 className="font-bold text-lg mb-4">Histograma Invertido de PRs (kg)</h3>
+        {/* CHART 2 */}
+        <motion.div initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} className={`p-4 md:p-6 rounded-2xl border ${t.card} flex flex-col`}>
+          <h3 className="font-bold text-lg mb-4">Histograma Invertido (PRs Actuales)</h3>
           {chart2Data.length === 0 ? (
-            <div className={`my-auto text-center p-8 ${t.textMuted}`}>Sin datos registrados.</div>
+            <div className={`my-auto text-center p-8 ${t.textMuted}`}>Sin datos de peso registrados en el filtro.</div>
           ) : (
-            <div className="h-80 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chart2Data} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 40 }}>
+            <div className="h-80 w-full overflow-y-auto pr-2 custom-scrollbar">
+              <ResponsiveContainer width="100%" height={Math.max(320, chart2Data.length * 30)}>
+                <BarChart data={chart2Data} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 60 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={theme === 'dark' ? '#334155' : '#e2e8f0'} />
                   <XAxis type="number" stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} axisLine={false} tickLine={false} />
                   <YAxis dataKey="ejercicio" type="category" stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={9} axisLine={false} tickLine={false} width={80} />
-                  <Tooltip contentStyle={{ backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', borderRadius: '12px', color: theme === 'dark' ? '#fff' : '#000' }} formatter={(val) => [`${val} kg`, 'Máximo PR']} />
+                  <Tooltip cursor={{fill: theme==='dark'?'#ffffff10':'#00000010'}} contentStyle={{ backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', borderRadius: '12px', color: theme === 'dark' ? '#fff' : '#000' }} formatter={(val) => [`${val} kg`, 'Récord']} />
                   <Bar dataKey="peso" radius={[0, 8, 8, 0]}>
-                    {chart2Data.map((_, index) => <Cell key={`cell-${index}`} fill={theme === 'dark' ? `hsl(${350 - index * 10}, 75%, 50%)` : `hsl(${210 + index * 10}, 75%, 50%)`} />)}
+                    {chart2Data.map((_, index) => <Cell key={`cell-${index}`} fill={theme === 'dark' ? `hsl(${350 - index * (60/chart2Data.length)}, 75%, 50%)` : `hsl(${210 + index * (60/chart2Data.length)}, 75%, 50%)`} />)}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
           )}
-        </div>
+        </motion.div>
 
-        <div className={`p-4 md:p-6 rounded-2xl border ${t.card} flex flex-col items-center relative overflow-hidden`}>
-          <div className="flex justify-between w-full mb-4 items-center">
-            <div>
-              <h3 className="font-bold text-lg">Mapa Muscular Corporal</h3>
-              <p className={`text-xs ${t.textMuted}`}>Verde (&le;9d) &rarr; Amarillo (9-18d) &rarr; Naranja (18-27d) &rarr; Rojo (&gt;27d)</p>
+        {/* MAPA ANATÓMICO */}
+        <motion.div initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} className={`p-4 md:p-6 rounded-2xl border ${t.card} flex flex-col items-center relative overflow-hidden`}>
+          <div className="w-full mb-4">
+            <h3 className="font-bold text-lg text-center">Estado Muscular Actual</h3>
+            <div className="flex justify-center gap-1 text-[10px] font-bold mt-2 bg-black/5 p-1 rounded-full w-max mx-auto">
+              <span className="text-green-500 px-2 py-0.5">&le; 9d</span>
+              <span className="text-yellow-500 px-2 py-0.5">10-18d</span>
+              <span className="text-orange-500 px-2 py-0.5">19-27d</span>
+              <span className="text-red-500 px-2 py-0.5">&gt; 27d</span>
             </div>
-            <button onClick={() => { playClickSound(); setSvgView(svgView === 'frente' ? 'espalda' : 'frente'); }} className={`text-xs px-3 py-1.5 rounded-lg border font-bold transition-all active:scale-95 ${t.accentBorder} ${t.accentText}`}>Ver {svgView === 'frente' ? 'Espalda' : 'Frente'}</button>
           </div>
 
           {hoveredMuscle && (
-            <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-black/80 text-white px-3 py-1.5 rounded-lg text-xs font-bold z-20 pointer-events-none backdrop-blur-md border border-white/20">
-              {hoveredMuscle.label}: {muscleCounts[hoveredMuscle.id] || 0} ejercicios realizados
+            <div className="absolute top-24 bg-black/90 text-white px-4 py-2 rounded-xl text-sm font-bold z-20 pointer-events-none shadow-2xl border border-white/20">
+              {hoveredMuscle.label}: {muscleCounts[hoveredMuscle.id] || 0} series totales
             </div>
           )}
 
-          <div className="relative w-full flex justify-center py-4">
-            <svg viewBox="0 0 200 260" className="w-full max-w-[200px] drop-shadow-2xl overflow-visible">
-              <g stroke={theme === 'dark' ? '#111' : '#fff'} strokeWidth="1.5" strokeLinejoin="round">
-                <ellipse cx="100" cy="24" rx="14" ry="18" fill={theme === 'dark' ? '#262626' : '#e2e8f0'} />
-                <path d="M 86,40 L 114,40 L 126,50 L 74,50 Z" fill={theme === 'dark' ? '#262626' : '#e2e8f0'} />
-                <path d="M 52,86 L 44,130 L 36,130 L 46,80 Z M 148,86 L 156,130 L 164,130 L 154,80 Z" fill={theme === 'dark' ? '#262626' : '#e2e8f0'} />
-                <path d="M 72,218 L 82,250 L 68,250 Z M 128,218 L 118,250 L 132,250 Z" fill={theme === 'dark' ? '#262626' : '#e2e8f0'} />
-
-                {activePaths.map(p => {
+          <div className="flex w-full justify-around py-2 gap-4">
+            {/* Frente */}
+            <svg viewBox="0 0 200 260" className="w-1/2 max-w-[160px] drop-shadow-xl overflow-visible">
+              <g stroke={theme === 'dark' ? '#222' : '#fff'} strokeWidth="1.5" strokeLinejoin="round">
+                <ellipse cx="100" cy="25" rx="15" ry="20" fill={theme === 'dark' ? '#262626' : '#e2e8f0'} /> {/* Cabeza */}
+                <path d="M 85 40 Q 100 45 115 40 L 125 50 L 75 50 Z" fill={theme === 'dark' ? '#262626' : '#e2e8f0'} /> {/* Cuello/Trapecio */}
+                <path d="M 72 218 L 82 250 L 68 250 Z M 128 218 L 118 250 L 132 250 Z" fill={theme === 'dark' ? '#262626' : '#e2e8f0'} /> {/* Pies */}
+                {ANATOMY_PATHS.frente.map(p => {
                   const isSelected = clickedMuscle === p.id;
-                  const lastDate = muscleLastTrained[p.id];
-                  const muscleColor = getMuscleColorByDays(lastDate);
+                  const muscleColor = getMuscleColorByDays(muscleLastTrained[p.id]);
                   return (
-                    <path 
-                      key={p.id} d={p.d} fill={muscleColor} stroke={isSelected ? '#00e676' : theme === 'dark' ? '#111' : '#fff'}
-                      strokeWidth={isSelected ? '3' : '1.5'}
-                      onMouseEnter={() => setHoveredMuscle(p)} onMouseLeave={() => setHoveredMuscle(null)}
-                      onClick={() => { playClickSound(); setClickedMuscle(p.id); }}
-                      className="transition-all duration-300 cursor-pointer hover:brightness-125 hover:scale-105 transform origin-center"
-                    ><title>{p.label}</title></path>
+                    <path key={p.id} d={p.d} fill={muscleColor} stroke={isSelected ? '#fff' : (theme === 'dark' ? '#222' : '#fff')} strokeWidth={isSelected ? '3' : '1.5'}
+                      onMouseEnter={() => setHoveredMuscle(p)} onMouseLeave={() => setHoveredMuscle(null)} onClick={() => { playClickSound(); setClickedMuscle(p.id); }}
+                      className="transition-all duration-300 cursor-pointer hover:brightness-125 transform origin-center hover:scale-105"
+                    />
+                  );
+                })}
+              </g>
+            </svg>
+            
+            {/* Espalda */}
+            <svg viewBox="0 0 200 260" className="w-1/2 max-w-[160px] drop-shadow-xl overflow-visible">
+              <g stroke={theme === 'dark' ? '#222' : '#fff'} strokeWidth="1.5" strokeLinejoin="round">
+                <ellipse cx="100" cy="25" rx="15" ry="20" fill={theme === 'dark' ? '#262626' : '#e2e8f0'} /> {/* Cabeza */}
+                <path d="M 85 40 Q 100 45 115 40 L 125 50 L 75 50 Z" fill={theme === 'dark' ? '#262626' : '#e2e8f0'} /> {/* Cuello/Trapecio */}
+                <path d="M 72 218 L 82 250 L 68 250 Z M 128 218 L 118 250 L 132 250 Z" fill={theme === 'dark' ? '#262626' : '#e2e8f0'} /> {/* Pies */}
+                {ANATOMY_PATHS.espalda.map(p => {
+                  const isSelected = clickedMuscle === p.id;
+                  const muscleColor = getMuscleColorByDays(muscleLastTrained[p.id]);
+                  return (
+                    <path key={p.id} d={p.d} fill={muscleColor} stroke={isSelected ? '#fff' : (theme === 'dark' ? '#222' : '#fff')} strokeWidth={isSelected ? '3' : '1.5'}
+                      onMouseEnter={() => setHoveredMuscle(p)} onMouseLeave={() => setHoveredMuscle(null)} onClick={() => { playClickSound(); setClickedMuscle(p.id); }}
+                      className="transition-all duration-300 cursor-pointer hover:brightness-125 transform origin-center hover:scale-105"
+                    />
                   );
                 })}
               </g>
             </svg>
           </div>
-          <div className="mt-2 text-center text-xs"><span className={t.textMuted}>Haz click en un músculo para ver su evolución.</span></div>
-        </div>
+          <p className={`text-xs mt-4 ${t.textMuted} text-center`}>Click en un músculo para aislar su historial.</p>
+        </motion.div>
       </div>
 
-      {clickedMuscle && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className={`p-4 md:p-6 rounded-2xl border ${t.card}`}>
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="font-bold text-lg flex items-center gap-2"><Sparkles className={t.accentText} size={20} /> Evolución: Músculo {clickedMuscle}</h3>
-            <button onClick={() => { playClickSound(); setClickedMuscle(null); }} className="text-xs px-2 py-1 bg-black/10 rounded-lg hover:bg-black/20"><X size={16}/></button>
-          </div>
-          {chart4Data.length === 0 ? (
-            <p className={`text-center p-8 ${t.textMuted}`}>No hay registros para {clickedMuscle}.</p>
-          ) : (
-            <div className="h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chart4Data} margin={{ top: 10, right: 10, bottom: 5, left: -20 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#334155' : '#e2e8f0'} vertical={false} />
-                  <XAxis dataKey="dateFormatted" stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} axisLine={false} tickLine={false} />
-                  <YAxis stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <Tooltip contentStyle={{ backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', borderRadius: '12px', color: theme === 'dark' ? '#fff' : '#000' }} formatter={(val) => [`${val} ejercicios`, 'Volumen']} />
-                  <Bar dataKey="count" fill={theme === 'dark' ? '#e53935' : '#1565c0'} radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+      {/* CHART 4 (Specific Muscle) */}
+      <AnimatePresence>
+        {clickedMuscle && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+            <div className={`p-4 md:p-6 mt-6 rounded-2xl border ${t.card}`}>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-lg flex items-center gap-2 capitalize"><Sparkles className={t.accentText} size={20} /> Evolución Aislda: {clickedMuscle}</h3>
+                <button onClick={() => { playClickSound(); setClickedMuscle(null); }} className="text-xs px-2 py-1 bg-black/10 rounded-lg hover:bg-black/20 transition-colors"><X size={16}/></button>
+              </div>
+              {chart4Data.length === 0 ? (
+                <p className={`text-center p-8 ${t.textMuted}`}>No hay registros en el filtro seleccionado.</p>
+              ) : (
+                <div className="h-64 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chart4Data} margin={{ top: 10, right: 10, bottom: 5, left: -20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#334155' : '#e2e8f0'} vertical={false} />
+                      <XAxis dataKey="dateFormatted" stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} axisLine={false} tickLine={false} />
+                      <YAxis stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} axisLine={false} tickLine={false} allowDecimals={false} />
+                      <Tooltip cursor={{fill: theme==='dark'?'#ffffff10':'#00000010'}} contentStyle={{ backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', borderRadius: '12px', color: theme === 'dark' ? '#fff' : '#000' }} formatter={(val) => [`${val} ejercicios`, 'Volumen']} />
+                      <Bar dataKey="count" fill={theme === 'dark' ? '#e53935' : '#1565c0'} radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </div>
-          )}
-        </motion.div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
 
 
 // ==============================================================================
-// COMPONENTE PRINCIPAL (Mantiene estado global de la sesión)
+// APP ROOT
 // ==============================================================================
-
 export default function App() {
   const [theme, setTheme] = useState('dark');
   const [activeTab, setActiveTab] = useState('inicio');
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMessage, setLoadingMessage] = useState('Cargando aplicación...');
+  
   const [prs, setPrs] = useState([]);
   const [routines, setRoutines] = useState([]);
+  const [ejerciciosLista, setEjerciciosLista] = useState(ejerciciosListaInicial);
   const [animations, setAnimations] = useState([]);
 
   const t = useMemo(() => ({
@@ -1033,52 +1013,115 @@ export default function App() {
     card: theme === 'dark' ? 'bg-[#222528] border-slate-700/60' : 'bg-white border-slate-200',
     accentText: theme === 'dark' ? 'text-[#e53935]' : 'text-[#1565c0]',
     accentBg: theme === 'dark' ? 'bg-[#e53935]' : 'bg-[#1565c0]',
-    accentHover: theme === 'dark' ? 'hover:bg-[#c62828]' : 'hover:bg-[#0d47a1]',
     accentBorder: theme === 'dark' ? 'border-[#e53935]' : 'border-[#1565c0]',
     accentLightBg: theme === 'dark' ? 'bg-[#e53935]/15' : 'bg-[#1565c0]/10',
     input: theme === 'dark' ? 'bg-[#141617] border-slate-700 text-white focus:border-[#e53935]' : 'bg-slate-50 border-slate-300 text-black focus:border-[#1565c0]'
   }), [theme]);
 
+  // Auth Listener
   useEffect(() => {
-    signInAnonymously(auth).catch(() => {});
-    const storedId = localStorage.getItem('gymTrackerSession');
-    if (storedId) {
-      getDoc(doc(db, 'users', storedId)).then(snap => {
-        if (snap.exists()) setCurrentUser({ id: snap.id, ...snap.data() });
-        else localStorage.removeItem('gymTrackerSession');
-        setLoading(false);
-      }).catch(() => setLoading(false));
-    } else {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        setLoadingMessage('Descargando tu perfil...');
+        const docRef = doc(db, 'users', user.uid);
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          setCurrentUser({ id: user.uid, ...snap.data(), email: user.email });
+        } else {
+          // Fallback if data missing
+          setCurrentUser({ id: user.uid, username: user.displayName || 'Atleta', email: user.email });
+        }
+      } else {
+        setCurrentUser(null);
+      }
       setLoading(false);
-    }
+    });
+    return () => unsub();
+  }, []);
 
+  // Data Listeners
+  useEffect(() => {
     const unsubPrs = onSnapshot(collection(db, 'prs'), snap => setPrs(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
     const unsubRoutines = onSnapshot(collection(db, 'routines'), snap => setRoutines(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-
     return () => { unsubPrs(); unsubRoutines(); };
   }, []);
 
-  const triggerFunAnimation = (isPr = false) => {
-    const emojis = isPr ? ['🏆', '🔥', '👑', '💪', '🚀'] : ['👏', '✅', '⚡', '💯', '😎'];
-    const newAnims = Array.from({ length: 8 }).map((_, i) => ({
-      id: Date.now() + i, emoji: emojis[Math.floor(Math.random() * emojis.length)],
-      x: (Math.random() - 0.5) * 300, y: -Math.random() * 400 - 100, rotation: (Math.random() - 0.5) * 360
+  // Routine Import Listener (Sharing)
+  useEffect(() => {
+    if (!currentUser) return;
+    const checkImport = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const shareId = params.get('shareRoutine');
+      if (shareId) {
+        setLoadingMessage('Importando rutina compartida...');
+        setLoading(true);
+        try {
+          const snap = await getDoc(doc(db, 'routines', shareId));
+          if (snap.exists()) {
+            const data = snap.data();
+            await addDoc(collection(db, 'routines'), {
+              ...data,
+              authorId: currentUser.id,
+              authorName: currentUser.username,
+              name: `${data.name} (Importada)`
+            });
+            alert(`¡Rutina "${data.name}" importada exitosamente a tu perfil!`);
+          }
+        } catch (e) {
+          console.error(e);
+        } finally {
+          window.history.replaceState({}, document.title, window.location.pathname);
+          setLoading(false);
+          setActiveTab('rutinas');
+        }
+      }
+    };
+    checkImport();
+  }, [currentUser]);
+
+  const triggerFunAnimation = (type = 'random') => {
+    const emojis = {
+      confetti: ['🎊', '🎉', '✨', '🎈'],
+      gimbros: ['🦍', '💪', '🏋️', '🔥'],
+      applause: ['👏', '🙌', '⭐', '😎'],
+      pr: ['🏆', '👑', '🥇', '🚀']
+    };
+    
+    let chosenKey = type;
+    if (type === 'random') {
+      const keys = ['confetti', 'gimbros', 'applause'];
+      chosenKey = keys[Math.floor(Math.random() * keys.length)];
+    }
+
+    const newAnims = Array.from({ length: 10 }).map((_, i) => ({
+      id: Date.now() + i, 
+      emoji: emojis[chosenKey][Math.floor(Math.random() * emojis[chosenKey].length)],
+      x: (Math.random() - 0.5) * window.innerWidth * 0.8, 
+      y: chosenKey === 'gimbros' ? Math.random() * 200 : -Math.random() * 400 - 100, // Gimbros float up, others fall down
+      direction: chosenKey === 'gimbros' ? -1 : 1, // 1 for falling down, -1 for floating up
+      rotation: (Math.random() - 0.5) * 360
     }));
+    
     setAnimations(prev => [...prev, ...newAnims]);
-    setTimeout(() => setAnimations(prev => prev.filter(a => !newAnims.includes(a))), 2500);
+    setTimeout(() => setAnimations(prev => prev.filter(a => !newAnims.includes(a))), 3000);
+  };
+
+  const handleLogout = () => {
+    playClickSound();
+    auth.signOut();
   };
 
   if (loading) return (
     <div className={`min-h-screen flex flex-col justify-center items-center ${t.bg} ${t.text}`}>
       <div className={`animate-spin rounded-full h-12 w-12 border-b-2 mb-4 ${t.accentBorder}`}></div>
-      <p className={`font-bold animate-pulse ${t.textMuted}`}>Cargando...</p>
+      <p className={`font-bold animate-pulse ${t.textMuted}`}>{loadingMessage}</p>
     </div>
   );
 
-  if (!currentUser) return <LoginScreen setCurrentUser={setCurrentUser} t={t} onTriggerAnimation={triggerFunAnimation} />;
+  if (!currentUser) return <LoginScreen t={t} />;
 
   const TabButton = ({ id, icon: Icon, label }) => (
-    <button onClick={() => { playClickSound(); setActiveTab(id); }} className={`flex-1 py-3 md:py-0 md:px-4 md:h-10 rounded-xl md:rounded-lg flex flex-col md:flex-row items-center justify-center gap-1 text-xs md:text-sm font-bold transition-all active:scale-95 ${activeTab === id ? `${t.accentBg} text-white shadow-md` : `opacity-60 hover:opacity-100`}`}>
+    <button onClick={() => { playClickSound(); setActiveTab(id); }} className={`flex-1 py-3 md:py-0 md:px-4 md:h-10 rounded-xl md:rounded-lg flex flex-col md:flex-row items-center justify-center gap-1 text-xs md:text-sm font-bold transition-all active:scale-95 ${activeTab === id ? `${t.accentBg} text-white shadow-md` : `opacity-60 hover:opacity-100 hover:bg-black/5`}`}>
       <Icon size={18} /> <span className="hidden sm:inline md:inline">{label}</span>
     </button>
   );
@@ -1099,9 +1142,9 @@ export default function App() {
               <TabButton id="analytics" icon={Activity} label="Analíticas" />
             </div>
             <div className="hidden md:flex items-center gap-4 border-l pl-4 border-slate-500/20">
-              <div className="text-right">
-                <p className="text-sm font-bold">{currentUser.username}</p>
-                <button onClick={() => { playClickSound(); localStorage.removeItem('gymTrackerSession'); setCurrentUser(null); }} className={`text-[10px] ${t.textMuted} hover:underline`}>Cerrar Sesión</button>
+              <div className="text-right flex flex-col items-end">
+                <span className="flex items-center gap-1 text-sm font-bold"><User size={14}/> {currentUser.username}</span>
+                <button onClick={handleLogout} className={`text-[10px] ${t.textMuted} hover:underline`}>Cerrar Sesión</button>
               </div>
               <button onClick={() => { playClickSound(); setTheme(theme === 'dark' ? 'light' : 'dark'); }} className="p-2 rounded-full hover:bg-black/10 transition-transform active:scale-90">
                 {theme === 'dark' ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} className="text-indigo-600" />}
@@ -1113,19 +1156,19 @@ export default function App() {
 
       <AnimatePresence>
         {animations.map(anim => (
-          <motion.div key={anim.id} initial={{ opacity: 1, x: 0, y: window.innerHeight, rotate: 0 }} animate={{ opacity: 0, x: anim.x, y: anim.y, rotate: anim.rotation }} transition={{ duration: 2.5, ease: "easeOut" }} className="fixed text-4xl md:text-5xl pointer-events-none z-50 left-1/2 bottom-0">
+          <motion.div key={anim.id} initial={{ opacity: 1, x: 0, y: anim.direction === 1 ? -50 : window.innerHeight, rotate: 0, scale: 0.5 }} animate={{ opacity: 0, x: anim.x, y: anim.direction === 1 ? window.innerHeight : -100, rotate: anim.rotation, scale: 1.5 }} transition={{ duration: 2.5, ease: "easeOut" }} className="fixed text-4xl md:text-5xl pointer-events-none z-50 left-1/2 top-0">
             {anim.emoji}
           </motion.div>
         ))}
       </AnimatePresence>
 
-      <main className="max-w-5xl mx-auto p-4 py-6 md:py-8">
+      <main className="max-w-5xl mx-auto p-4 py-6 md:py-8 relative min-h-[80vh]">
         <AnimatePresence mode="wait">
           <motion.div key={activeTab} initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-10}} transition={{duration:0.2}}>
             {activeTab === 'inicio' && <InicioTab currentUser={currentUser} routines={routines} prs={prs} t={t} theme={theme} onTriggerAnimation={triggerFunAnimation} />}
-            {activeTab === 'rutinas' && <RutinasTab currentUser={currentUser} routines={routines} setCurrentUser={setCurrentUser} t={t} theme={theme} />}
+            {activeTab === 'rutinas' && <RutinasTab currentUser={currentUser} routines={routines} ejerciciosLista={ejerciciosLista} setEjerciciosLista={setEjerciciosLista} setCurrentUser={setCurrentUser} t={t} theme={theme} setLoading={setLoading} setLoadingMessage={setLoadingMessage} />}
             {activeTab === 'ranking' && <RankingTab prs={prs} t={t} theme={theme} />}
-            {activeTab === 'analytics' && <AnalyticsTab prs={prs} currentUser={currentUser} t={t} theme={theme} />}
+            {activeTab === 'analytics' && <AnalyticsTab prs={prs} currentUser={currentUser} ejerciciosLista={ejerciciosLista} t={t} theme={theme} />}
           </motion.div>
         </AnimatePresence>
       </main>
