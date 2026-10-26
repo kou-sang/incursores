@@ -303,7 +303,7 @@ const LoginScreen = ({ t }) => {
     <div className={`min-h-screen flex flex-col items-center justify-center p-4 overflow-y-auto ${t.bg} ${t.text}`}>
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className={`w-full max-w-md p-6 md:p-8 my-auto rounded-3xl border shadow-xl ${t.card}`}>
         <div className="flex justify-center mb-3"><Dumbbell className={t.accentText} size={40} /></div>
-        <h2 className={`text-xl md:text-2xl font-black text-center mb-1 ${t.text}`}>Incursores PR</h2>
+        <h2 className={`text-xl md:text-2xl font-black text-center mb-1 ${t.text}`}>COLOSSUS</h2>
         <p className={`text-center text-xs mb-6 ${t.textMuted}`}>Registra tus rutinas y compara marcas</p>
 
         {error && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 text-red-500 rounded-xl text-xs md:text-sm text-center font-bold">{error}</div>}
@@ -1119,7 +1119,7 @@ export default function App() {
           
           <div className="hidden md:flex items-center gap-2">
             <Dumbbell className={t.accentText} size={28} />
-            <h1 className="text-xl font-black tracking-tight">Incursores</h1>
+            <h1 className="text-xl font-black tracking-tight">Colossus</h1>
           </div>
           
           <div className="flex items-center justify-between w-full md:w-auto md:gap-4 flex-1 md:flex-none">
