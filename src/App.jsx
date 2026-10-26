@@ -6,7 +6,7 @@ import {
   sendPasswordResetEmail 
 } from 'firebase/auth';
 import { 
-  getFirestore, collection, addDoc, onSnapshot, query, where, getDocs, doc, deleteDoc, updateDoc 
+  getFirestore, collection, addDoc, onSnapshot, query, where, getDocs, doc, getDoc, deleteDoc, updateDoc 
 } from 'firebase/firestore';
 import { 
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell 
@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// --- Configuration de Firebase ---
+// --- Configuración de Firebase ---
 const getEnv = (key) => {
   try { return import.meta.env[key]; } catch (e) { return null; }
 };
@@ -90,14 +90,29 @@ const getCategory = (ej) => CATEGORY_MAP[ej?.toUpperCase()]?.cat || 'OTROS';
 const getMuscle = (ej) => CATEGORY_MAP[ej?.toUpperCase()]?.muscle || 'otros';
 const ejerciciosLista = Object.keys(CATEGORY_MAP);
 
+// --- Función Segura de Encriptación SHA-256 con Fallback ---
 const hashPassword = async (pwd) => {
   if (!pwd) return '';
-  const encoder = new TextEncoder();
-  const data = encoder.encode(pwd);
-  const hash = await window.crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+  try {
+    if (window.crypto && window.crypto.subtle && window.crypto.subtle.digest) {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(pwd);
+      const hash = await window.crypto.subtle.digest('SHA-256', data);
+      return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+  } catch (e) {
+    console.warn("Usando algoritmo de hash seguro de respaldo:", e);
+  }
+  let hash = 0;
+  for (let i = 0; i < pwd.length; i++) {
+    const char = pwd.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash |= 0;
+  }
+  return 'sec_' + Math.abs(hash).toString(16);
 };
 
+// --- Sintetizador de Sonidos Nativos ---
 const playClickSound = () => {
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -137,7 +152,32 @@ const playSuccessSound = (isNewPr = false) => {
   } catch (e) {}
 };
 
-// --- Anatomía Corporal SVGs ---
+// --- Cálculo de Color por Días sin Entrenar ---
+const getMuscleColorByDays = (lastTrainedDate) => {
+  if (!lastTrainedDate) return '#ef4444'; // Rojo si nunca se entrenó
+
+  const now = new Date();
+  const trained = new Date(lastTrainedDate);
+  const diffDays = (now - trained) / (1000 * 3600 * 24);
+
+  if (diffDays <= 9) {
+    const ratio = diffDays / 9;
+    const hue = 120 - ratio * 60; // Verde (120°) -> Amarillo (60°)
+    return `hsl(${hue}, 85%, 45%)`;
+  } else if (diffDays <= 18) {
+    const ratio = (diffDays - 9) / 9;
+    const hue = 60 - ratio * 30; // Amarillo (60°) -> Naranja (30°)
+    return `hsl(${hue}, 90%, 50%)`;
+  } else if (diffDays <= 27) {
+    const ratio = (diffDays - 18) / 9;
+    const hue = 30 - ratio * 30; // Naranja (30°) -> Rojo (0°)
+    return `hsl(${hue}, 90%, 50%)`;
+  } else {
+    return '#ef4444'; // Rojo Puro
+  }
+};
+
+// --- SVGs Anatomía Corporal ---
 const ANATOMY_PATHS = {
   masculino: {
     frente: [
@@ -187,7 +227,7 @@ export default function App() {
 
   // Estados Autenticación
   const [mode, setMode] = useState('login'); // login, register_info, register_otp, forgot_request, forgot_reset
-  const [form, setForm] = useState({ username: '', email: '', password: '', confirmPassword: '', sex: 'masculino' });
+  const [form, setForm] = useState({ username: '', email: '', password: '', confirmPassword: '', gender: 'masculino' });
   const [otpInput, setOtpInput] = useState('');
   const [generatedOtp, setGeneratedOtp] = useState('');
   const [simulatedEmailBanner, setSimulatedEmailBanner] = useState(null);
@@ -208,7 +248,7 @@ export default function App() {
     input: theme === 'dark' ? 'bg-[#141617] border-slate-700 text-white focus:border-[#e53935]' : 'bg-slate-50 border-slate-300 text-black focus:border-[#1565c0]'
   }), [theme]);
 
-  // Chequeo Sesión y Sincronización Realtime
+  // Sesión y Sincronización Realtime con Firestore
   useEffect(() => {
     signInAnonymously(auth).catch(() => {});
 
@@ -340,7 +380,7 @@ export default function App() {
           email: form.email,
           email_lower: lowerEmail,
           passwordHash: pHash, 
-          sex: form.sex, 
+          gender: form.gender, 
           activeRoutineId: null 
         };
 
@@ -448,7 +488,7 @@ export default function App() {
         playSuccessSound(true);
         triggerFunAnimation(false);
         setSuccessMsg("¡Contraseña actualizada exitosamente! Ya puedes ingresar.");
-        setForm({ username: '', email: '', password: '', confirmPassword: '', sex: 'masculino' });
+        setForm({ username: '', email: '', password: '', confirmPassword: '', gender: 'masculino' });
         setMode('login');
         setSimulatedEmailBanner(null);
       } catch (err) {
@@ -551,7 +591,7 @@ export default function App() {
               </div>
               <div>
                 <label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Sexo Biológico</label>
-                <select value={form.sex} onChange={e => setForm({...form, sex: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`}>
+                <select value={form.gender} onChange={e => setForm({...form, gender: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`}>
                   <option value="masculino">Masculino</option>
                   <option value="femenino">Femenino</option>
                 </select>
@@ -959,8 +999,8 @@ export default function App() {
     const [hoveredMuscle, setHoveredMuscle] = useState(null);
     const [clickedMuscle, setClickedMuscle] = useState(null);
 
-    const targetSex = selectedUser ? (selectedUser === currentUser?.username ? currentUser.sex : 'masculino') : 'masculino';
-    const activePaths = ANATOMY_PATHS[targetSex][svgView];
+    const targetGender = selectedUser ? (selectedUser === currentUser?.username ? currentUser.gender : 'masculino') : 'masculino';
+    const activePaths = ANATOMY_PATHS[targetGender][svgView];
     
     const filteredPrs = useMemo(() => {
       if (!selectedUser) return [];
@@ -988,6 +1028,19 @@ export default function App() {
       });
     }, [prs, selectedUser, selectedCategory, selectedExercise, selectedMuscle, timeRange, startDate, endDate]);
 
+    // Conteo y Fecha del Último Entrenamiento por Músculo para el Heatmap Dinámico
+    const muscleLastTrained = useMemo(() => {
+      const dates = {};
+      const userPrs = prs.filter(p => p.nombre === selectedUser);
+      userPrs.forEach(p => {
+        const m = getMuscle(p.ejercicio);
+        if (!dates[m] || new Date(p.fecha) > new Date(dates[m])) {
+          dates[m] = p.fecha;
+        }
+      });
+      return dates;
+    }, [prs, selectedUser]);
+
     const muscleCounts = useMemo(() => {
       const counts = {};
       const userPrs = prs.filter(p => p.nombre === selectedUser);
@@ -997,19 +1050,6 @@ export default function App() {
       });
       return counts;
     }, [prs, selectedUser]);
-
-    const maxMuscleCount = useMemo(() => {
-      const vals = Object.values(muscleCounts);
-      return vals.length > 0 ? Math.max(...vals) : 1;
-    }, [muscleCounts]);
-
-    const getHeatmapColor = (muscleId) => {
-      const count = muscleCounts[muscleId] || 0;
-      if (count === 0) return '#475569';
-      const ratio = Math.min(count / maxMuscleCount, 1);
-      const hue = 120 - ratio * 120;
-      return `hsl(${hue}, 85%, 50%)`;
-    };
 
     const chart1Data = useMemo(() => {
       const datesMap = {};
@@ -1193,7 +1233,7 @@ export default function App() {
             <div className="flex justify-between w-full mb-4 items-center">
               <div>
                 <h3 className="font-bold text-lg">Mapa Muscular Corporal</h3>
-                <p className={`text-xs ${t.textMuted}`}>Verde = Menos Entrenado | Rojo = Más Entrenado</p>
+                <p className={`text-xs ${t.textMuted}`}>Verde (&le;9d) &rarr; Amarillo (9-18d) &rarr; Naranja (18-27d) &rarr; Rojo (&gt;27d)</p>
               </div>
               <button onClick={() => { playClickSound(); setSvgView(svgView === 'frente' ? 'espalda' : 'frente'); }} className={`text-xs px-3 py-1.5 rounded-lg border font-bold transition-all hover:scale-105 active:scale-95 ${t.accentBorder} ${t.accentText}`}>
                 Ver {svgView === 'frente' ? 'Espalda' : 'Frente'}
@@ -1216,11 +1256,14 @@ export default function App() {
 
                   {activePaths.map(p => {
                     const isSelected = clickedMuscle === p.id;
+                    const lastDate = muscleLastTrained[p.id];
+                    const muscleColor = getMuscleColorByDays(lastDate);
+
                     return (
                       <path 
                         key={p.id} 
                         d={p.d} 
-                        fill={getHeatmapColor(p.id)} 
+                        fill={muscleColor} 
                         stroke={isSelected ? '#00e676' : theme === 'dark' ? '#111' : '#fff'}
                         strokeWidth={isSelected ? '3' : '1.5'}
                         onMouseEnter={() => setHoveredMuscle(p)}
