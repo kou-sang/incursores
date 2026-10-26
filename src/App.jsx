@@ -1,16 +1,26 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
-  getFirestore, collection, addDoc, onSnapshot, query, where, getDocs, doc, getDoc, deleteDoc, updateDoc, setDoc 
+  getAuth, 
+  signInAnonymously, 
+  sendPasswordResetEmail 
+} from 'firebase/auth';
+import { 
+  getFirestore, collection, addDoc, onSnapshot, query, where, getDocs, doc, deleteDoc, updateDoc 
 } from 'firebase/firestore';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Trophy, Activity, Dumbbell, Sun, Moon, Plus, Home, Calendar, Edit2, Copy, Trash2, Share2, Check, X, User } from 'lucide-react';
+import { 
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell 
+} from 'recharts';
+import { 
+  Trophy, Activity, Dumbbell, Sun, Moon, Plus, Home, Calendar, Edit2, Copy, Trash2, Share2, Check, X, Filter, Sparkles, Mail, ShieldCheck, ArrowLeft 
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// --- Configuración Segura de Firebase ---
+// --- Configuration de Firebase ---
 const getEnv = (key) => {
   try { return import.meta.env[key]; } catch (e) { return null; }
 };
+
 const firebaseConfig = {
   apiKey: getEnv('VITE_FIREBASE_API_KEY') || "AIzaSyBjTwVy9P7kHc4jlQcfdiI8k9XGYcnNxMI",
   authDomain: getEnv('VITE_FIREBASE_AUTH_DOMAIN') || "incursores.firebaseapp.com",
@@ -23,304 +33,634 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
+export const auth = getAuth(app);
 
-// --- Constantes y Diccionarios ---
+// --- Días y Mapeo de Categorías Musculares ---
 const DAYS = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
 
 const CATEGORY_MAP = {
-  'PRESS MAQUINA': 'PECHO', 'PULLOVER': 'PECHO', 'MARIPOSA': 'PECHO', 'PRESS INCLINADO': 'PECHO', 'PRESS BANCA': 'PECHO', 'FLEXIONES': 'PECHO', 'FONDOS': 'PECHO',
-  'PESO MUERTO': 'ESPALDA', 'JALON AL PECHO': 'ESPALDA', 'REMO CON BARRA': 'ESPALDA', 'REMO BAJO': 'ESPALDA', 'REMO T': 'ESPALDA', 'REMO UNILATERAL': 'ESPALDA', 'DOMINADAS': 'ESPALDA', 'FACE PULL': 'ESPALDA',
-  'VUELOS ANTERIORES': 'HOMBRO', 'PRESS HOMBRO BARRAS': 'HOMBRO', 'VUELOS LATERALES': 'HOMBRO', 'PRESS HOMBRO': 'HOMBRO', 'REMO MENTON': 'HOMBRO', 'VUELOS POSTERIORES': 'HOMBRO',
-  'SCOTT': 'BICEPS', 'BICEP CONCENTRADO': 'BICEPS', 'ALT CON MANCUERNA': 'BICEPS', 'CURL POLEA': 'BICEPS', 'CURL CON BARRA': 'BICEPS', 'BAYESIANA': 'BICEPS', 'CURL BICEPS INCLINADO': 'BICEPS',
-  'EXT POLEA ALTA': 'TRICEPS', 'PRESS FRANCES': 'TRICEPS', 'EXT CON MANCUERNA': 'TRICEPS', 'EXT COPA': 'TRICEPS', 'TRASNUCA': 'TRICEPS',
-  'HACK': 'CUADRICEPS', 'CUADRICEPS': 'CUADRICEPS', 'PRENSA 45°': 'CUADRICEPS', 'SENTADILLA': 'CUADRICEPS', 'ESTOCADAS': 'CUADRICEPS',
-  'HIP THRUST': 'GLUTEOS', 'PATADA DE GLUTEO': 'GLUTEOS', 'MULTICADERA': 'GLUTEOS', 'ABDUCTOR': 'GLUTEOS',
-  'ISQUIOTIBIALES': 'ISQUIOTIBIALES',
-  'ADUCTOR': 'ADUCTORES',
-  'SOLEO': 'GEMELOS', 'GEMELOS': 'GEMELOS',
-  'ABDOMINALES': 'ABDOMINALES', 'CRUNCH': 'ABDOMINALES', 'PLANCHA': 'ABDOMINALES'
+  'PRESS BANCA': { cat: 'PECHO', muscle: 'pecho' },
+  'PRESS INCLINADO': { cat: 'PECHO', muscle: 'pecho' },
+  'MARIPOSA': { cat: 'PECHO', muscle: 'pecho' },
+  'PRESS MAQUINA': { cat: 'PECHO', muscle: 'pecho' },
+  'FLEXIONES': { cat: 'PECHO', muscle: 'pecho' },
+  'PULLOVER': { cat: 'PECHO', muscle: 'pecho' },
+  'PRESS HOMBRO': { cat: 'HOMBRO', muscle: 'hombros' },
+  'PRESS HOMBRO BARRAS': { cat: 'HOMBRO', muscle: 'hombros' },
+  'VUELOS LATERALES': { cat: 'HOMBRO', muscle: 'hombros' },
+  'VUELOS ANTERIORES': { cat: 'HOMBRO', muscle: 'hombros' },
+  'VUELOS POSTERIORES': { cat: 'HOMBRO', muscle: 'hombros' },
+  'REMO MENTON': { cat: 'HOMBRO', muscle: 'hombros' },
+  'FACE PULL': { cat: 'HOMBRO', muscle: 'hombros' },
+  'PESO MUERTO': { cat: 'ESPALDA', muscle: 'espalda' },
+  'JALON AL PECHO': { cat: 'ESPALDA', muscle: 'espalda' },
+  'REMO CON BARRA': { cat: 'ESPALDA', muscle: 'espalda' },
+  'REMO BAJO': { cat: 'ESPALDA', muscle: 'espalda' },
+  'REMO T': { cat: 'ESPALDA', muscle: 'espalda' },
+  'REMO UNILATERAL': { cat: 'ESPALDA', muscle: 'espalda' },
+  'DOMINADAS': { cat: 'ESPALDA', muscle: 'espalda' },
+  'CURL CON BARRA': { cat: 'BICEPS', muscle: 'biceps' },
+  'CURL POLEA': { cat: 'BICEPS', muscle: 'biceps' },
+  'SCOTT': { cat: 'BICEPS', muscle: 'biceps' },
+  'BICEP CONCENTRADO': { cat: 'BICEPS', muscle: 'biceps' },
+  'ALT CON MANCUERNA': { cat: 'BICEPS', muscle: 'biceps' },
+  'BAYESIANA': { cat: 'BICEPS', muscle: 'biceps' },
+  'CURL BICEPS INCLINADO': { cat: 'BICEPS', muscle: 'biceps' },
+  'EXT POLEA ALTA': { cat: 'TRICEPS', muscle: 'triceps' },
+  'FONDOS': { cat: 'TRICEPS', muscle: 'triceps' },
+  'PRESS FRANCES': { cat: 'TRICEPS', muscle: 'triceps' },
+  'EXT CON MANCUERNA': { cat: 'TRICEPS', muscle: 'triceps' },
+  'EXT COPA': { cat: 'TRICEPS', muscle: 'triceps' },
+  'TRASNUCA': { cat: 'TRICEPS', muscle: 'triceps' },
+  'SENTADILLA': { cat: 'PIERNAS', muscle: 'cuadriceps' },
+  'HACK': { cat: 'PIERNAS', muscle: 'cuadriceps' },
+  'CUADRICEPS': { cat: 'PIERNAS', muscle: 'cuadriceps' },
+  'PRENSA 45°': { cat: 'PIERNAS', muscle: 'cuadriceps' },
+  'ESTOCADAS': { cat: 'PIERNAS', muscle: 'cuadriceps' },
+  'ISQUIOTIBIALES': { cat: 'PIERNAS', muscle: 'isquiotibiales' },
+  'PATADA DE GLUTEO': { cat: 'PIERNAS', muscle: 'gluteos' },
+  'HIP THRUST': { cat: 'PIERNAS', muscle: 'gluteos' },
+  'MULTICADERA': { cat: 'PIERNAS', muscle: 'gluteos' },
+  'SOLEO': { cat: 'PIERNAS', muscle: 'gemelos' },
+  'ABDUCTOR': { cat: 'PIERNAS', muscle: 'aductores' },
+  'ADUCTOR': { cat: 'PIERNAS', muscle: 'aductores' }
 };
 
-const getCategory = (ejercicio) => CATEGORY_MAP[ejercicio.toUpperCase()] || 'OTROS';
+const getCategory = (ej) => CATEGORY_MAP[ej?.toUpperCase()]?.cat || 'OTROS';
+const getMuscle = (ej) => CATEGORY_MAP[ej?.toUpperCase()]?.muscle || 'otros';
+const ejerciciosLista = Object.keys(CATEGORY_MAP);
 
-// Rutas Geométricas para el Mapa Muscular 
-const anatomyPaths = {
+const hashPassword = async (pwd) => {
+  if (!pwd) return '';
+  const encoder = new TextEncoder();
+  const data = encoder.encode(pwd);
+  const hash = await window.crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+};
+
+const playClickSound = () => {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(440, ctx.currentTime);
+    gain.gain.setValueAtTime(0.03, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.05);
+  } catch (e) {}
+};
+
+const playSuccessSound = (isNewPr = false) => {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const notes = isNewPr ? [523.25, 659.25, 783.99, 1046.50] : [523.25, 659.25];
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.08);
+      gain.gain.setValueAtTime(0.08, ctx.currentTime + idx * 0.08);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.08 + 0.2);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(ctx.currentTime + idx * 0.08);
+      osc.stop(ctx.currentTime + idx * 0.08 + 0.2);
+    });
+  } catch (e) {}
+};
+
+// --- Anatomía Corporal SVGs ---
+const ANATOMY_PATHS = {
   masculino: {
     frente: [
-      { id: 'PECHO', d: 'M35,35 L65,35 L60,50 L40,50 Z' },
-      { id: 'ABDOMINALES', d: 'M42,52 L58,52 L55,85 L45,85 Z' },
-      { id: 'HOMBRO', d: 'M25,30 L33,30 L30,45 Z M75,30 L67,30 L70,45 Z' },
-      { id: 'BICEPS', d: 'M25,48 L32,48 L28,65 L22,65 Z M75,48 L68,48 L72,65 L78,65 Z' },
-      { id: 'CUADRICEPS', d: 'M35,90 L48,90 L45,130 L32,130 Z M65,90 L52,90 L55,130 L68,130 Z' }
+      { id: 'pecho', label: 'Pecho', d: 'M 74,52 Q 100,60 126,52 L 122,80 Q 100,85 78,80 Z' },
+      { id: 'hombros', label: 'Hombros', d: 'M 54,50 Q 70,48 74,52 L 72,74 Q 52,70 54,50 Z M 146,50 Q 130,48 126,52 L 128,74 Q 148,70 146,50 Z' },
+      { id: 'biceps', label: 'Bíceps', d: 'M 50,76 Q 66,74 68,98 Q 50,102 46,82 Z M 150,76 Q 134,74 132,98 Q 150,102 154,82 Z' },
+      { id: 'abdominales', label: 'Abdominales', d: 'M 78,84 Q 100,86 122,84 L 118,138 Q 100,142 82,138 Z' },
+      { id: 'cuadriceps', label: 'Cuádriceps', d: 'M 74,142 Q 96,144 96,188 L 74,188 Z M 126,142 Q 104,144 104,188 L 126,188 Z' },
+      { id: 'aductores', label: 'Aductores', d: 'M 96,146 L 98,184 L 92,184 Z M 104,146 L 102,184 L 108,184 Z' }
     ],
     espalda: [
-      { id: 'ESPALDA', d: 'M35,35 L65,35 L55,60 L45,60 Z' },
-      { id: 'TRICEPS', d: 'M25,48 L32,48 L28,65 L22,65 Z M75,48 L68,48 L72,65 L78,65 Z' },
-      { id: 'GLUTEOS', d: 'M40,75 L50,85 L45,95 L35,90 Z M60,75 L50,85 L55,95 L65,90 Z' },
-      { id: 'ISQUIOTIBIALES', d: 'M35,100 L48,100 L45,130 L32,130 Z M65,100 L52,100 L55,130 L68,130 Z' },
-      { id: 'GEMELOS', d: 'M32,135 L45,135 L40,165 L30,165 Z M68,135 L55,135 L60,165 L70,165 Z' }
+      { id: 'espalda', label: 'Espalda', d: 'M 70,50 Q 100,45 130,50 L 122,120 Q 100,126 78,120 Z' },
+      { id: 'triceps', label: 'Tríceps', d: 'M 48,72 Q 64,70 66,94 Q 48,98 44,78 Z M 152,72 Q 136,70 134,94 Q 152,98 156,78 Z' },
+      { id: 'gluteos', label: 'Glúteos', d: 'M 76,124 Q 100,126 100,154 L 74,150 Z M 124,124 Q 100,126 100,154 L 126,150 Z' },
+      { id: 'isquiotibiales', label: 'Isquiotibiales', d: 'M 74,154 Q 96,156 96,194 L 74,194 Z M 126,154 Q 104,156 104,194 L 126,194 Z' },
+      { id: 'gemelos', label: 'Gemelos', d: 'M 74,198 Q 94,198 90,230 L 76,230 Z M 126,198 Q 106,198 110,230 L 124,230 Z' }
     ]
   },
   femenino: {
     frente: [
-      { id: 'PECHO', d: 'M38,38 L62,38 L58,50 L42,50 Z' }, 
-      { id: 'ABDOMINALES', d: 'M44,52 L56,52 L52,85 L48,85 Z' }, 
-      { id: 'HOMBRO', d: 'M28,33 L35,33 L32,45 Z M72,33 L65,33 L68,45 Z' },
-      { id: 'BICEPS', d: 'M28,48 L34,48 L31,65 L26,65 Z M72,48 L66,48 L69,65 L74,65 Z' },
-      { id: 'CUADRICEPS', d: 'M33,90 L48,90 L45,130 L30,130 Z M67,90 L52,90 L55,130 L70,130 Z' } 
+      { id: 'pecho', label: 'Pecho', d: 'M 76,54 Q 100,60 124,54 L 120,78 Q 100,82 80,78 Z' },
+      { id: 'hombros', label: 'Hombros', d: 'M 58,52 Q 72,50 76,54 L 74,72 Q 58,68 58,52 Z M 142,52 Q 128,50 124,54 L 126,72 Q 142,68 142,52 Z' },
+      { id: 'biceps', label: 'Bíceps', d: 'M 54,74 Q 68,72 68,94 Q 54,98 50,80 Z M 146,74 Q 132,72 132,94 Q 146,98 150,80 Z' },
+      { id: 'abdominales', label: 'Abdominales', d: 'M 80,80 Q 100,82 120,80 L 116,132 Q 100,136 84,132 Z' },
+      { id: 'cuadriceps', label: 'Cuádriceps', d: 'M 72,136 Q 96,138 96,184 L 72,184 Z M 128,136 Q 104,138 104,184 L 128,184 Z' },
+      { id: 'aductores', label: 'Aductores', d: 'M 96,138 L 98,180 L 90,180 Z M 104,138 L 102,180 L 110,180 Z' }
     ],
     espalda: [
-      { id: 'ESPALDA', d: 'M38,38 L62,38 L55,60 L45,60 Z' },
-      { id: 'TRICEPS', d: 'M28,48 L34,48 L31,65 L26,65 Z M72,48 L66,48 L69,65 L74,65 Z' },
-      { id: 'GLUTEOS', d: 'M38,75 L50,85 L45,98 L32,90 Z M62,75 L50,85 L55,98 L68,90 Z' }, 
-      { id: 'ISQUIOTIBIALES', d: 'M33,100 L48,100 L45,130 L30,130 Z M67,100 L52,100 L55,130 L70,130 Z' },
-      { id: 'GEMELOS', d: 'M30,135 L45,135 L40,165 L28,165 Z M70,135 L55,135 L60,165 L72,165 Z' }
+      { id: 'espalda', label: 'Espalda', d: 'M 72,52 Q 100,48 128,52 L 120,116 Q 100,122 80,116 Z' },
+      { id: 'triceps', label: 'Tríceps', d: 'M 52,70 Q 66,68 68,90 Q 52,94 48,76 Z M 148,70 Q 134,68 132,90 Q 148,94 152,76 Z' },
+      { id: 'gluteos', label: 'Glúteos', d: 'M 74,120 Q 100,124 100,154 L 72,148 Z M 126,120 Q 100,124 100,154 L 128,148 Z' },
+      { id: 'isquiotibiales', label: 'Isquiotibiales', d: 'M 72,152 Q 96,154 96,190 L 72,190 Z M 128,152 Q 104,154 104,190 L 128,190 Z' },
+      { id: 'gemelos', label: 'Gemelos', d: 'M 72,194 Q 92,194 88,226 L 74,226 Z M 128,194 Q 108,194 112,226 L 126,226 Z' }
     ]
   }
 };
 
-// --- Utilidades ---
-const hashPassword = async (password) => {
-  const msgUint8 = new TextEncoder().encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-};
-
-const getMuscleColor = (muscle, userPrs) => {
-  const musclePrs = userPrs.filter(pr => getCategory(pr.ejercicio) === muscle);
-  if (musclePrs.length === 0) return '#ef4444'; // Rojo (nunca entrenado)
-  
-  const latestDate = new Date(Math.max(...musclePrs.map(pr => new Date(pr.fecha))));
-  const diffDays = Math.floor((new Date() - latestDate) / (1000 * 60 * 60 * 24));
-  
-  if (diffDays >= 27) return '#ef4444'; // Rojo
-  let hue = 0;
-  if (diffDays <= 9) hue = 120 - (diffDays / 9) * 60; // Verde a Amarillo
-  else if (diffDays <= 18) hue = 60 - ((diffDays - 9) / 9) * 30; // Amarillo a Naranja
-  else hue = 30 - ((diffDays - 18) / 9) * 30; // Naranja a Rojo
-  return `hsl(${hue}, 80%, 50%)`;
-};
-
-// --- Componente Principal ---
 export default function App() {
   const [theme, setTheme] = useState('dark');
-  const [activeTab, setActiveTab] = useState('inicio'); 
+  const [activeTab, setActiveTab] = useState('inicio');
   const [currentUser, setCurrentUser] = useState(null);
-  
-  // Data States
+  const [loading, setLoading] = useState(true);
+  const [loadingMessage, setLoadingMessage] = useState('Cargando aplicación...');
   const [prs, setPrs] = useState([]);
   const [routines, setRoutines] = useState([]);
-  const [ejerciciosLista, setEjerciciosLista] = useState(Object.keys(CATEGORY_MAP));
-  
-  // Loading States
-  const [loading, setLoading] = useState(true);
-  const [loadingMessage, setLoadingMessage] = useState("Verificando sesión...");
-  
-  // Global Animation State
   const [animations, setAnimations] = useState([]);
 
-  // Theme Object
-  const t = {
-    bg: theme === 'dark' ? 'bg-[#121212]' : 'bg-[#f4f7fb]',
-    text: theme === 'dark' ? 'text-slate-200' : 'text-slate-800',
+  // Estados Autenticación
+  const [mode, setMode] = useState('login'); // login, register_info, register_otp, forgot_request, forgot_reset
+  const [form, setForm] = useState({ username: '', email: '', password: '', confirmPassword: '', sex: 'masculino' });
+  const [otpInput, setOtpInput] = useState('');
+  const [generatedOtp, setGeneratedOtp] = useState('');
+  const [simulatedEmailBanner, setSimulatedEmailBanner] = useState(null);
+  const [resetUserId, setResetUserId] = useState(null);
+  const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
+
+  const t = useMemo(() => ({
+    bg: theme === 'dark' ? 'bg-[#181a1b]' : 'bg-[#f8fafc]',
+    text: theme === 'dark' ? 'text-slate-100' : 'text-slate-800',
     textMuted: theme === 'dark' ? 'text-slate-400' : 'text-slate-500',
-    card: theme === 'dark' ? 'bg-[#1e1e1e] border-[#2c2c2c]' : 'bg-white border-slate-200',
+    card: theme === 'dark' ? 'bg-[#222528] border-slate-700/60' : 'bg-white border-slate-200',
     accentText: theme === 'dark' ? 'text-[#e53935]' : 'text-[#1565c0]',
     accentBg: theme === 'dark' ? 'bg-[#e53935]' : 'bg-[#1565c0]',
     accentHover: theme === 'dark' ? 'hover:bg-[#c62828]' : 'hover:bg-[#0d47a1]',
     accentBorder: theme === 'dark' ? 'border-[#e53935]' : 'border-[#1565c0]',
-    accentLightBg: theme === 'dark' ? 'bg-[#e53935]/10' : 'bg-[#1565c0]/10',
-    input: theme === 'dark' ? 'bg-[#2c2c2c] border-slate-700 text-white focus:border-[#e53935]' : 'bg-slate-50 border-slate-300 text-black focus:border-[#1565c0]'
-  };
+    accentLightBg: theme === 'dark' ? 'bg-[#e53935]/15' : 'bg-[#1565c0]/10',
+    input: theme === 'dark' ? 'bg-[#141617] border-slate-700 text-white focus:border-[#e53935]' : 'bg-slate-50 border-slate-300 text-black focus:border-[#1565c0]'
+  }), [theme]);
 
-  const playSuccessSound = (isPr = false) => {
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const now = ctx.currentTime;
-      const notes = isPr ? [523.25, 659.25, 783.99, 1046.50] : [523.25, 659.25];
-      notes.forEach((freq, index) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, now + index * 0.1);
-        gain.gain.setValueAtTime(0.1, now + index * 0.1);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + index * 0.1 + 0.3);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(now + index * 0.1);
-        osc.stop(now + index * 0.1 + 0.3);
-      });
-    } catch (e) { console.error("Audio error", e); }
-  };
-
-  const triggerFunAnimation = (isPr = false) => {
-    const emojis = isPr ? ['🏆', '👑', '🔥', '🚀'] : ['🎉', '💪', '😎', '👍'];
-    const newAnim = Array.from({ length: isPr ? 20 : 8 }).map((_, i) => ({
-      id: Date.now() + i,
-      emoji: emojis[Math.floor(Math.random() * emojis.length)],
-      x: (Math.random() - 0.5) * window.innerWidth * 0.8,
-      y: Math.random() * -300 - 100,
-      rotation: Math.random() * 360
-    }));
-    setAnimations(prev => [...prev, ...newAnim]);
-    setTimeout(() => {
-      setAnimations(prev => prev.filter(a => !newAnim.find(n => n.id === a.id)));
-    }, 3000);
-  };
-
-  // --- Initial Data Fetch & Auth ---
+  // Chequeo Sesión y Sincronización Realtime
   useEffect(() => {
-    const initApp = async () => {
-      const sessionId = localStorage.getItem('gymTrackerSession');
-      if (sessionId) {
-        setLoadingMessage("Restaurando tu perfil...");
-        try {
-          const d = await getDoc(doc(db, 'users', sessionId));
-          if (d.exists()) setCurrentUser({ id: d.id, ...d.data() });
-          else localStorage.removeItem('gymTrackerSession');
-        } catch(e) {}
-      }
-      setLoading(false);
-    };
-    initApp();
+    signInAnonymously(auth).catch(() => {});
 
-    // Listen to PRs globally for analytics
-    const unsubPrs = onSnapshot(collection(db, 'prs'), (snap) => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setPrs(data.sort((a, b) => new Date(a.fecha) - new Date(b.fecha)));
+    const storedId = localStorage.getItem('gymTrackerSession');
+    if (storedId) {
+      getDoc(doc(db, 'users', storedId)).then(snap => {
+        if (snap.exists()) setCurrentUser({ id: snap.id, ...snap.data() });
+        else localStorage.removeItem('gymTrackerSession');
+        setLoading(false);
+      }).catch(() => setLoading(false));
+    } else {
+      setLoading(false);
+    }
+
+    const unsubPrs = onSnapshot(collection(db, 'prs'), snap => {
+      setPrs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-    return () => unsubPrs();
-  }, []);
-
-  // Listen to Routines once user is logged in
-  useEffect(() => {
-    if (!currentUser) return;
-    const unsubRoutines = onSnapshot(collection(db, 'routines'), (snap) => {
+    const unsubRoutines = onSnapshot(collection(db, 'routines'), snap => {
       setRoutines(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
-    
-    // Check for Deep Link Share
-    const checkShare = async () => {
-      const params = new URLSearchParams(window.location.search);
-      const shareId = params.get('shareRoutine');
-      if (shareId) {
-        if (window.confirm("¿Deseas añadir la rutina compartida a tu perfil?")) {
-          setLoadingMessage("Copiando rutina a tu cuenta...");
-          setLoading(true);
-          try {
-            const rDoc = await getDoc(doc(db, 'routines', shareId));
-            if (rDoc.exists()) {
-              const data = rDoc.data();
-              await addDoc(collection(db, 'routines'), {
-                ...data, name: `${data.name} (Compartida)`, authorId: currentUser.id, authorName: currentUser.username
-              });
-            }
-          } catch(e) {}
-          setLoading(false);
-        }
-        window.history.replaceState({}, document.title, "/");
-      }
-    };
-    checkShare();
-    return () => unsubRoutines();
-  }, [currentUser]);
 
+    return () => { unsubPrs(); unsubRoutines(); };
+  }, []);
 
-  // --- COMPONENTES DE VISTA ---
+  const triggerFunAnimation = (isPr = false) => {
+    const emojis = isPr ? ['🏆', '🔥', '👑', '💪', '🚀'] : ['👏', '✅', '⚡', '💯', '😎'];
+    const newAnims = Array.from({ length: 8 }).map((_, i) => ({
+      id: Date.now() + i,
+      emoji: emojis[Math.floor(Math.random() * emojis.length)],
+      x: (Math.random() - 0.5) * 300,
+      y: -Math.random() * 400 - 100,
+      rotation: (Math.random() - 0.5) * 360
+    }));
+    setAnimations(prev => [...prev, ...newAnims]);
+    setTimeout(() => {
+      setAnimations(prev => prev.filter(a => !newAnims.includes(a)));
+    }, 2500);
+  };
 
   const LoginScreen = () => {
-    const [isReg, setIsReg] = useState(false);
-    const [form, setForm] = useState({ username: '', password: '', gender: 'masculino' });
-    const [error, setError] = useState('');
+    const resetStates = () => {
+      setError(''); setSuccessMsg(''); setOtpInput('');
+    };
 
-    const handleSubmit = async (e) => {
+    const handleSwitchMode = (targetMode) => {
+      playClickSound();
+      resetStates();
+      setMode(targetMode);
+    };
+
+    const sendOtpCode = async (recipientEmail, purpose) => {
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      setGeneratedOtp(code);
+      setSimulatedEmailBanner({ email: recipientEmail, code, purpose });
+
+      try {
+        await sendPasswordResetEmail(auth, recipientEmail);
+        setSuccessMsg(`Correo de verificación enviado a ${recipientEmail}. Revisa tu bandeja de entrada o Spam.`);
+      } catch (err) {
+        setSuccessMsg(`Código generado para ${recipientEmail}. Usa el código de verificación mostrado arriba.`);
+      }
+      playSuccessSound(false);
+    };
+
+    const handleRegisterStep1 = async (e) => {
       e.preventDefault();
-      setError('');
+      playClickSound();
+      resetStates();
+
       if (!/^[a-zA-Z]+$/.test(form.username)) {
         setError("El usuario solo debe contener letras (sin espacios ni números).");
         return;
       }
-      
-      setLoadingMessage(isReg ? "Creando tu perfil seguro..." : "Iniciando sesión...");
+
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+        setError("Por favor ingresa un correo electrónico válido.");
+        return;
+      }
+
+      if (form.password.length < 6) {
+        setError("La contraseña debe tener al menos 6 caracteres.");
+        return;
+      }
+
+      setLoadingMessage("Verificando disponibilidad de usuario y correo...");
       setLoading(true);
+
       try {
         const lowerUser = form.username.toLowerCase();
-        const pHash = await hashPassword(form.password);
-        
-        if (isReg) {
-          const q = query(collection(db, 'users'), where('username_lower', '==', lowerUser));
-          const snaps = await getDocs(q);
-          if (!snaps.empty) throw new Error("Este nombre de usuario ya está en uso.");
-          
-          const newUser = { username: form.username, username_lower: lowerUser, passwordHash: pHash, gender: form.gender, activeRoutineId: null };
-          const docRef = await addDoc(collection(db, 'users'), newUser);
-          setCurrentUser({ id: docRef.id, ...newUser });
-          localStorage.setItem('gymTrackerSession', docRef.id);
-        } else {
-          const q = query(collection(db, 'users'), where('username_lower', '==', lowerUser), where('passwordHash', '==', pHash));
-          const snaps = await getDocs(q);
-          if (snaps.empty) throw new Error("Usuario o contraseña incorrectos.");
-          setCurrentUser({ id: snaps.docs[0].id, ...snaps.docs[0].data() });
-          localStorage.setItem('gymTrackerSession', snaps.docs[0].id);
-        }
+        const lowerEmail = form.email.toLowerCase();
+
+        const qUser = query(collection(db, 'users'), where('username_lower', '==', lowerUser));
+        const snapsUser = await getDocs(qUser);
+        if (!snapsUser.empty) throw new Error("El nombre de usuario ya está registrado.");
+
+        const qEmail = query(collection(db, 'users'), where('email_lower', '==', lowerEmail));
+        const snapsEmail = await getDocs(qEmail);
+        if (!snapsEmail.empty) throw new Error("Este correo ya está asociado a otra cuenta.");
+
+        await sendOtpCode(form.email, 'registro');
+        setMode('register_otp');
       } catch (err) {
         setError(err.message);
       }
       setLoading(false);
     };
 
+    const handleVerifyRegisterOtp = async (e) => {
+      e.preventDefault();
+      playClickSound();
+      resetStates();
+
+      if (otpInput.trim() !== generatedOtp) {
+        setError("El código de verificación es incorrecto. Revisa el código de 6 dígitos.");
+        return;
+      }
+
+      setLoadingMessage("Creando tu perfil seguro...");
+      setLoading(true);
+      try {
+        const lowerUser = form.username.toLowerCase();
+        const lowerEmail = form.email.toLowerCase();
+        const pHash = await hashPassword(form.password);
+
+        const newUser = { 
+          username: form.username, 
+          username_lower: lowerUser, 
+          email: form.email,
+          email_lower: lowerEmail,
+          passwordHash: pHash, 
+          sex: form.sex, 
+          activeRoutineId: null 
+        };
+
+        const docRef = await addDoc(collection(db, 'users'), newUser);
+        playSuccessSound(true);
+        triggerFunAnimation(true);
+        setCurrentUser({ id: docRef.id, ...newUser });
+        localStorage.setItem('gymTrackerSession', docRef.id);
+      } catch (err) {
+        setError("Error al crear el perfil: " + err.message);
+      }
+      setLoading(false);
+    };
+
+    const handleLogin = async (e) => {
+      e.preventDefault();
+      playClickSound();
+      resetStates();
+
+      setLoadingMessage("Iniciando sesión...");
+      setLoading(true);
+      try {
+        const lowerUser = form.username.toLowerCase();
+        const pHash = await hashPassword(form.password);
+
+        const q = query(collection(db, 'users'), where('username_lower', '==', lowerUser), where('passwordHash', '==', pHash));
+        const snaps = await getDocs(q);
+
+        if (snaps.empty) throw new Error("Usuario o contraseña incorrectos.");
+        
+        setCurrentUser({ id: snaps.docs[0].id, ...snaps.docs[0].data() });
+        localStorage.setItem('gymTrackerSession', snaps.docs[0].id);
+      } catch (err) {
+        setError(err.message);
+      }
+      setLoading(false);
+    };
+
+    const handleForgotRequest = async (e) => {
+      e.preventDefault();
+      playClickSound();
+      resetStates();
+
+      const identifier = form.username.trim().toLowerCase();
+      if (!identifier) {
+        setError("Ingresa tu usuario o correo electrónico.");
+        return;
+      }
+
+      setLoadingMessage("Buscando tu cuenta...");
+      setLoading(true);
+
+      try {
+        let q = query(collection(db, 'users'), where('username_lower', '==', identifier));
+        let snaps = await getDocs(q);
+
+        if (snaps.empty) {
+          q = query(collection(db, 'users'), where('email_lower', '==', identifier));
+          snaps = await getDocs(q);
+        }
+
+        if (snaps.empty) throw new Error("No encontramos ninguna cuenta vinculada.");
+
+        const userDocData = snaps.docs[0].data();
+        setResetUserId(snaps.docs[0].id);
+
+        if (!userDocData.email) throw new Error("Esta cuenta no tiene un correo válido.");
+
+        await sendOtpCode(userDocData.email, 'recuperación de contraseña');
+        setMode('forgot_reset');
+        setSuccessMsg(`Código enviado a ${userDocData.email}`);
+      } catch (err) {
+        setError(err.message);
+      }
+      setLoading(false);
+    };
+
+    const handleResetPassword = async (e) => {
+      e.preventDefault();
+      playClickSound();
+      setError('');
+
+      if (otpInput.trim() !== generatedOtp) {
+        setError("El código de verificación es incorrecto.");
+        return;
+      }
+
+      if (form.password.length < 6) {
+        setError("La contraseña debe tener al menos 6 caracteres.");
+        return;
+      }
+
+      if (form.password !== form.confirmPassword) {
+        setError("Las contraseñas no coinciden.");
+        return;
+      }
+
+      setLoadingMessage("Actualizando contraseña...");
+      setLoading(true);
+
+      try {
+        const newHash = await hashPassword(form.password);
+        await updateDoc(doc(db, 'users', resetUserId), { passwordHash: newHash });
+
+        playSuccessSound(true);
+        triggerFunAnimation(false);
+        setSuccessMsg("¡Contraseña actualizada exitosamente! Ya puedes ingresar.");
+        setForm({ username: '', email: '', password: '', confirmPassword: '', sex: 'masculino' });
+        setMode('login');
+        setSimulatedEmailBanner(null);
+      } catch (err) {
+        setError("Error al restablecer la contraseña: " + err.message);
+      }
+      setLoading(false);
+    };
+
     return (
-      <div className={`min-h-screen flex items-center justify-center p-4 ${t.bg}`}>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className={`w-full max-w-md p-8 rounded-3xl border shadow-xl ${t.card}`}>
-          <div className="flex justify-center mb-6"><Dumbbell className={t.accentText} size={48} /></div>
-          <h2 className={`text-2xl font-black text-center mb-6 ${t.text}`}>Incursores PR</h2>
-          {error && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 text-red-500 rounded-lg text-sm text-center">{error}</div>}
+      <div className={`min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden ${t.bg}`}>
+        <AnimatePresence>
+          {simulatedEmailBanner && (
+            <motion.div 
+              initial={{ opacity: 0, y: -50 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -50 }}
+              className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-lg p-4 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 text-white shadow-2xl border border-white/20 backdrop-blur-lg flex flex-col sm:flex-row items-center justify-between gap-3"
+            >
+              <div className="flex items-center gap-3">
+                <Mail className="shrink-0 animate-bounce" size={28} />
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-amber-100">Código OTP Generado</p>
+                  <p className="text-xs">Para {simulatedEmailBanner.email}:</p>
+                  <p className="text-xl font-black tracking-widest text-white mt-0.5">{simulatedEmailBanner.code}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => {
+                  playClickSound();
+                  navigator.clipboard.writeText(simulatedEmailBanner.code);
+                  setOtpInput(simulatedEmailBanner.code);
+                }}
+                className="px-3 py-1.5 bg-white text-orange-600 font-bold text-xs rounded-xl hover:bg-orange-50 transition-transform active:scale-95 shadow"
+              >
+                Copiar e Insertar
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className={`w-full max-w-md p-8 rounded-3xl border shadow-2xl ${t.card}`}>
+          <div className="flex justify-center mb-4">
+            <Dumbbell className={t.accentText} size={48} />
+          </div>
           
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className={`block text-sm font-bold mb-1 ${t.textMuted}`}>Usuario</label>
-              <input type="text" required value={form.username} onChange={e => setForm({...form, username: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} placeholder="Solo letras" />
-            </div>
-            <div>
-              <label className={`block text-sm font-bold mb-1 ${t.textMuted}`}>Contraseña</label>
-              <input type="password" required value={form.password} onChange={e => setForm({...form, password: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} placeholder="••••••••" />
-            </div>
-            {isReg && (
+          <h2 className={`text-2xl font-black text-center mb-1 ${t.text}`}>Incursores PR</h2>
+          <p className={`text-center text-xs mb-6 ${t.textMuted}`}>
+            {mode === 'login' && 'Ingresa para guardar tus entrenamientos y récords'}
+            {mode === 'register_info' && 'Crea tu perfil seguro'}
+            {mode === 'register_otp' && `Verifica tu código enviado a ${form.email}`}
+            {mode === 'forgot_request' && 'Restablecer contraseña'}
+            {mode === 'forgot_reset' && 'Ingresa el código OTP e introduce tu nueva clave'}
+          </p>
+
+          {error && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 text-red-500 rounded-xl text-sm text-center font-medium">{error}</div>}
+          {successMsg && <div className="mb-4 p-3 bg-green-500/10 border border-green-500/50 text-green-500 rounded-xl text-sm text-center font-medium">{successMsg}</div>}
+
+          {mode === 'login' && (
+            <form onSubmit={handleLogin} className="space-y-4">
               <div>
-                <label className={`block text-sm font-bold mb-1 ${t.textMuted}`}>Sexo Biológico</label>
-                <select value={form.gender} onChange={e => setForm({...form, gender: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`}>
+                <label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Usuario</label>
+                <input type="text" required value={form.username} onChange={e => setForm({...form, username: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} placeholder="Ej: Tomas" />
+              </div>
+              <div>
+                <label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Contraseña</label>
+                <input type="password" required value={form.password} onChange={e => setForm({...form, password: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} placeholder="••••••••" />
+              </div>
+
+              <div className="text-right">
+                <button type="button" onClick={() => handleSwitchMode('forgot_request')} className={`text-xs font-bold ${t.accentText} hover:underline`}>
+                  ¿Olvidaste tu contraseña?
+                </button>
+              </div>
+
+              <button type="submit" className={`w-full p-3 mt-2 rounded-xl font-bold text-white transition-all hover:scale-[1.02] active:scale-95 shadow-md ${t.accentBg} ${t.accentHover}`}>
+                Ingresar
+              </button>
+
+              <div className="mt-6 text-center border-t pt-4 border-slate-500/20">
+                <button type="button" onClick={() => handleSwitchMode('register_info')} className={`text-sm font-bold ${t.accentText} hover:underline`}>
+                  ¿Nuevo aquí? Crea tu perfil
+                </button>
+              </div>
+            </form>
+          )}
+
+          {mode === 'register_info' && (
+            <form onSubmit={handleRegisterStep1} className="space-y-3">
+              <div>
+                <label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Usuario (Solo letras)</label>
+                <input type="text" required value={form.username} onChange={e => setForm({...form, username: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} placeholder="Ej: Tomas" />
+              </div>
+              <div>
+                <label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Correo Electrónico</label>
+                <input type="email" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} placeholder="correo@ejemplo.com" />
+              </div>
+              <div>
+                <label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Contraseña (Mínimo 6 caracteres)</label>
+                <input type="password" required value={form.password} onChange={e => setForm({...form, password: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} placeholder="••••••••" />
+              </div>
+              <div>
+                <label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Sexo Biológico</label>
+                <select value={form.sex} onChange={e => setForm({...form, sex: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`}>
                   <option value="masculino">Masculino</option>
                   <option value="femenino">Femenino</option>
                 </select>
               </div>
-            )}
-            <button type="submit" className={`w-full p-3 mt-4 rounded-xl font-bold text-white transition-transform active:scale-95 ${t.accentBg} ${t.accentHover}`}>
-              {isReg ? 'Crear Perfil' : 'Ingresar'}
-            </button>
-          </form>
-          <div className="mt-6 text-center">
-            <button onClick={() => { setIsReg(!isReg); setError(''); }} className={`text-sm font-medium ${t.accentText} hover:underline`}>
-              {isReg ? '¿Ya tienes cuenta? Inicia sesión' : '¿Nuevo aquí? Crea tu perfil'}
-            </button>
-          </div>
+
+              <button type="submit" className={`w-full p-3 mt-4 rounded-xl font-bold text-white transition-all hover:scale-[1.02] active:scale-95 shadow-md ${t.accentBg} ${t.accentHover}`}>
+                Enviar Código de Verificación
+              </button>
+
+              <div className="mt-4 text-center">
+                <button type="button" onClick={() => handleSwitchMode('login')} className={`text-sm font-bold ${t.textMuted} hover:underline flex items-center justify-center gap-1 mx-auto`}>
+                  <ArrowLeft size={16}/> Volver al Inicio de Sesión
+                </button>
+              </div>
+            </form>
+          )}
+
+          {mode === 'register_otp' && (
+            <form onSubmit={handleVerifyRegisterOtp} className="space-y-4">
+              <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-center">
+                <ShieldCheck className="mx-auto text-amber-500 mb-1" size={32} />
+                <p className="text-xs font-bold text-amber-500">Ingresa el código OTP enviado a tu correo</p>
+              </div>
+
+              <div>
+                <label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Código de Verificación</label>
+                <input type="text" maxLength={6} required value={otpInput} onChange={e => setOtpInput(e.target.value)} className={`w-full p-3 text-center text-2xl tracking-widest font-mono rounded-xl border outline-none ${t.input}`} placeholder="123456" />
+              </div>
+
+              <button type="submit" className={`w-full p-3 rounded-xl font-bold text-white transition-all hover:scale-[1.02] active:scale-95 shadow-md ${t.accentBg} ${t.accentHover}`}>
+                Verificar y Crear Perfil
+              </button>
+
+              <div className="flex justify-between text-xs pt-2">
+                <button type="button" onClick={() => sendOtpCode(form.email, 'registro')} className={`font-bold ${t.accentText} hover:underline`}>
+                  Reenviar código
+                </button>
+                <button type="button" onClick={() => handleSwitchMode('register_info')} className={`font-bold ${t.textMuted} hover:underline`}>
+                  Cambiar correo
+                </button>
+              </div>
+            </form>
+          )}
+
+          {mode === 'forgot_request' && (
+            <form onSubmit={handleForgotRequest} className="space-y-4">
+              <div>
+                <label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Usuario o Correo Registrado</label>
+                <input type="text" required value={form.username} onChange={e => setForm({...form, username: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} placeholder="Tu usuario o correo" />
+              </div>
+
+              <button type="submit" className={`w-full p-3 rounded-xl font-bold text-white transition-all hover:scale-[1.02] active:scale-95 shadow-md ${t.accentBg} ${t.accentHover}`}>
+                Enviar Código de Recuperación
+              </button>
+
+              <div className="mt-4 text-center">
+                <button type="button" onClick={() => handleSwitchMode('login')} className={`text-sm font-bold ${t.textMuted} hover:underline flex items-center justify-center gap-1 mx-auto`}>
+                  <ArrowLeft size={16}/> Cancelar y Volver
+                </button>
+              </div>
+            </form>
+          )}
+
+          {mode === 'forgot_reset' && (
+            <form onSubmit={handleResetPassword} className="space-y-3">
+              <div>
+                <label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Código de Verificación (6 dígitos)</label>
+                <input type="text" maxLength={6} required value={otpInput} onChange={e => setOtpInput(e.target.value)} className={`w-full p-3 text-center text-xl tracking-widest font-mono rounded-xl border outline-none ${t.input}`} placeholder="123456" />
+              </div>
+
+              <div>
+                <label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Nueva Contraseña</label>
+                <input type="password" required value={form.password} onChange={e => setForm({...form, password: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} placeholder="••••••••" />
+              </div>
+
+              <div>
+                <label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Confirmar Nueva Contraseña</label>
+                <input type="password" required value={form.confirmPassword} onChange={e => setForm({...form, confirmPassword: e.target.value})} className={`w-full p-3 rounded-xl border outline-none ${t.input}`} placeholder="••••••••" />
+              </div>
+
+              <button type="submit" className={`w-full p-3 mt-2 rounded-xl font-bold text-white transition-all hover:scale-[1.02] active:scale-95 shadow-md ${t.accentBg} ${t.accentHover}`}>
+                Restablecer Contraseña
+              </button>
+
+              <div className="mt-4 text-center">
+                <button type="button" onClick={() => handleSwitchMode('login')} className={`text-sm font-bold ${t.textMuted} hover:underline flex items-center justify-center gap-1 mx-auto`}>
+                  <ArrowLeft size={16}/> Volver al Inicio
+                </button>
+              </div>
+            </form>
+          )}
+
         </motion.div>
       </div>
     );
   };
 
   const InicioTab = () => {
-    const todayNum = new Date().getDay(); // 0 is Sunday
-    const mappedDay = todayNum === 0 ? 'domingo' : DAYS[todayNum - 1]; // map to array
-    const activeRoutine = routines.find(r => r.id === currentUser.activeRoutineId);
+    const todayNum = new Date().getDay();
+    const mappedDay = todayNum === 0 ? 'domingo' : DAYS[todayNum - 1];
+    const activeRoutine = routines.find(r => r.id === currentUser?.activeRoutineId);
     const [completingIdx, setCompletingIdx] = useState(null);
     const [kgInput, setKgInput] = useState('');
 
     const todayISO = new Date().toISOString().split('T')[0];
-    const userTodayPrs = prs.filter(pr => pr.nombre === currentUser.username && pr.fecha.startsWith(todayISO));
+    const userTodayPrs = prs.filter(pr => pr.nombre === currentUser?.username && pr.fecha?.startsWith(todayISO));
 
     const checkAndSubmitExercise = async (ejercicio) => {
+      playClickSound();
       const pesoNum = kgInput ? parseFloat(kgInput) : null;
       let isNewPr = false;
 
@@ -331,7 +671,10 @@ export default function App() {
       }
 
       await addDoc(collection(db, 'prs'), {
-        nombre: currentUser.username, ejercicio: ejercicio, peso: pesoNum, fecha: new Date().toISOString()
+        nombre: currentUser.username, 
+        ejercicio: ejercicio, 
+        peso: pesoNum, 
+        fecha: new Date().toISOString()
       });
 
       playSuccessSound(isNewPr);
@@ -375,12 +718,12 @@ export default function App() {
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
                       <input type="number" step="0.5" placeholder="Kg (Opcional)" value={kgInput} onChange={e => setKgInput(e.target.value)} className={`p-2 rounded-lg border w-full sm:w-32 ${t.input}`} />
                       <div className="flex gap-2">
-                        <button onClick={() => checkAndSubmitExercise(ex.ejercicio)} className={`flex-1 px-4 py-2 rounded-lg font-bold text-white ${t.accentBg} ${t.accentHover}`}>Guardar</button>
-                        <button onClick={() => setCompletingIdx(null)} className={`px-3 py-2 rounded-lg border ${theme === 'dark' ? 'border-slate-600 hover:bg-slate-700' : 'border-slate-300 hover:bg-slate-100'}`}><X size={20}/></button>
+                        <button onClick={() => checkAndSubmitExercise(ex.ejercicio)} className={`flex-1 px-4 py-2 rounded-lg font-bold text-white transition-all hover:scale-105 active:scale-95 ${t.accentBg} ${t.accentHover}`}>Guardar</button>
+                        <button onClick={() => { playClickSound(); setCompletingIdx(null); }} className={`px-3 py-2 rounded-lg border ${theme === 'dark' ? 'border-slate-600 hover:bg-slate-700' : 'border-slate-300 hover:bg-slate-100'}`}><X size={20}/></button>
                       </div>
                     </div>
                   ) : (
-                    <button onClick={() => setCompletingIdx(idx)} className={`px-6 py-2 rounded-lg font-bold border transition-colors self-start md:self-auto ${t.accentBorder} ${t.accentText} ${t.accentLightBg} hover:bg-opacity-20`}>Completar</button>
+                    <button onClick={() => { playClickSound(); setCompletingIdx(idx); }} className={`px-6 py-2 rounded-lg font-bold border transition-all hover:scale-105 active:scale-95 self-start md:self-auto ${t.accentBorder} ${t.accentText} ${t.accentLightBg} hover:bg-opacity-20`}>Completar</button>
                   )}
                 </motion.div>
               );
@@ -393,12 +736,16 @@ export default function App() {
 
   const RutinasTab = () => {
     const [editing, setEditing] = useState(null);
-    const myRoutines = routines.filter(r => r.authorId === currentUser.id);
+    const myRoutines = routines.filter(r => r.authorId === currentUser?.id);
 
-    const openCreate = () => setEditing({ name: '', exercises: DAYS.reduce((acc, d) => ({ ...acc, [d]: [] }), {}) });
+    const openCreate = () => {
+      playClickSound();
+      setEditing({ name: '', exercises: DAYS.reduce((acc, d) => ({ ...acc, [d]: [] }), {}) });
+    };
     
     const saveRoutine = async () => {
-      if (!editing.name.trim()) return alert("El nombre es requerido"); // Simple internal alert for empty form
+      playClickSound();
+      if (!editing.name.trim()) return alert("El nombre es requerido");
       setLoadingMessage("Guardando rutina...");
       setLoading(true);
       try {
@@ -411,10 +758,12 @@ export default function App() {
     };
 
     const deleteRoutine = async (id) => {
+      playClickSound();
       if (window.confirm("¿Eliminar esta rutina para siempre?")) await deleteDoc(doc(db, 'routines', id));
     };
 
     const copyRoutine = async (rutina) => {
+      playClickSound();
       setLoadingMessage("Duplicando rutina...");
       setLoading(true);
       await addDoc(collection(db, 'routines'), { ...rutina, id: null, name: `${rutina.name} (Copia)` });
@@ -422,6 +771,7 @@ export default function App() {
     };
 
     const setActive = async (id) => {
+      playClickSound();
       await updateDoc(doc(db, 'users', currentUser.id), { activeRoutineId: id });
       setCurrentUser(prev => ({ ...prev, activeRoutineId: id }));
     };
@@ -430,7 +780,7 @@ export default function App() {
       <div className={`p-4 md:p-6 rounded-2xl border ${t.card}`}>
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-bold">{editing.id ? 'Editar Rutina' : 'Nueva Rutina'}</h2>
-          <button onClick={() => setEditing(null)} className={t.textMuted}><X/></button>
+          <button onClick={() => { playClickSound(); setEditing(null); }} className={t.textMuted}><X/></button>
         </div>
         <input type="text" placeholder="Nombre de la rutina" value={editing.name} onChange={e => setEditing({...editing, name: e.target.value})} className={`w-full p-3 mb-6 rounded-xl border text-lg font-bold ${t.input}`} />
         
@@ -458,41 +808,43 @@ export default function App() {
                       setEditing({...editing, exercises: {...editing.exercises, [day]: newEx}});
                     }} className={`w-full md:w-32 p-2.5 rounded-lg border ${t.input}`} />
                   <button onClick={() => {
+                    playClickSound();
                     const newEx = editing.exercises[day].filter((_, i) => i !== idx);
                     setEditing({...editing, exercises: {...editing.exercises, [day]: newEx}});
                   }} className="p-2.5 text-red-500 bg-red-500/10 rounded-lg hover:bg-red-500/20"><Trash2 size={20}/></button>
                 </div>
               ))}
               <button onClick={() => {
+                playClickSound();
                 const newEx = [...editing.exercises[day], { ejercicio: '', series: '', reps: '' }];
                 setEditing({...editing, exercises: {...editing.exercises, [day]: newEx}});
-              }} className={`text-sm font-bold px-3 py-1.5 rounded-lg border ${t.accentBorder} ${t.accentText} hover:bg-opacity-10 transition-colors`}>+ Ejercicio</button>
+              }} className={`text-sm font-bold px-3 py-1.5 rounded-lg border transition-all hover:scale-105 active:scale-95 ${t.accentBorder} ${t.accentText} hover:bg-opacity-10`}>+ Ejercicio</button>
             </div>
           ))}
         </div>
-        <button onClick={saveRoutine} className={`w-full mt-6 p-4 rounded-xl font-bold text-white text-lg ${t.accentBg} ${t.accentHover}`}>Guardar Rutina</button>
+        <button onClick={saveRoutine} className={`w-full mt-6 p-4 rounded-xl font-bold text-white text-lg transition-all hover:scale-[1.01] active:scale-95 ${t.accentBg} ${t.accentHover}`}>Guardar Rutina</button>
         <datalist id="lista-ejercicios">{ejerciciosLista.map(e => <option key={e} value={e}/>)}</datalist>
       </div>
     );
 
     return (
       <div className="space-y-4">
-        <button onClick={openCreate} className={`w-full p-4 rounded-2xl border border-dashed flex justify-center items-center gap-2 font-bold hover:bg-black/5 transition-colors ${theme === 'dark' ? 'border-slate-600' : 'border-slate-300'}`}><Plus/> Crear Nueva Rutina</button>
+        <button onClick={openCreate} className={`w-full p-4 rounded-2xl border border-dashed flex justify-center items-center gap-2 font-bold transition-all hover:scale-[1.01] active:scale-95 ${theme === 'dark' ? 'border-slate-600 hover:bg-white/5' : 'border-slate-300 hover:bg-black/5'}`}><Plus/> Crear Nueva Rutina</button>
         {myRoutines.length === 0 ? <p className={`text-center p-8 ${t.textMuted}`}>No tienes rutinas. Crea la primera.</p> : (
           <div className="grid md:grid-cols-2 gap-4">
             {myRoutines.map(r => {
-              const isActive = currentUser.activeRoutineId === r.id;
+              const isActive = currentUser?.activeRoutineId === r.id;
               return (
                 <div key={r.id} className={`p-5 rounded-2xl border relative overflow-hidden transition-all ${t.card} ${isActive ? `ring-2 ring-${theme==='dark'?'red-500':'blue-600'}` : ''}`}>
                   {isActive && <div className={`absolute top-0 right-0 px-3 py-1 text-[10px] font-bold text-white rounded-bl-lg ${t.accentBg}`}>ACTIVA</div>}
                   <h3 className="text-xl font-bold mb-1 pr-16">{r.name}</h3>
                   <p className={`text-xs mb-4 ${t.textMuted}`}>Por {r.authorName}</p>
                   <div className="flex flex-wrap gap-2">
-                    <button onClick={() => setEditing(r)} className={`p-2 rounded-lg bg-black/5 hover:bg-black/10`}><Edit2 size={16}/></button>
-                    <button onClick={() => copyRoutine(r)} className={`p-2 rounded-lg bg-black/5 hover:bg-black/10`}><Copy size={16}/></button>
-                    <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}?shareRoutine=${r.id}`); alert("¡Link de rutina copiado al portapapeles!"); }} className={`p-2 rounded-lg bg-black/5 hover:bg-black/10`}><Share2 size={16}/></button>
-                    <button onClick={() => deleteRoutine(r.id)} className={`p-2 rounded-lg text-red-500 bg-red-500/10 hover:bg-red-500/20`}><Trash2 size={16}/></button>
-                    {!isActive && <button onClick={() => setActive(r.id)} className={`ml-auto px-4 py-1.5 text-sm font-bold rounded-lg border ${t.accentText} ${t.accentBorder}`}>Activar</button>}
+                    <button onClick={() => { playClickSound(); setEditing(r); }} className={`p-2 rounded-lg bg-black/5 hover:bg-black/10 transition-transform active:scale-90`}><Edit2 size={16}/></button>
+                    <button onClick={() => copyRoutine(r)} className={`p-2 rounded-lg bg-black/5 hover:bg-black/10 transition-transform active:scale-90`}><Copy size={16}/></button>
+                    <button onClick={() => { playClickSound(); navigator.clipboard.writeText(`${window.location.origin}?shareRoutine=${r.id}`); alert("¡Link de rutina copiado!"); }} className={`p-2 rounded-lg bg-black/5 hover:bg-black/10 transition-transform active:scale-90`}><Share2 size={16}/></button>
+                    <button onClick={() => deleteRoutine(r.id)} className={`p-2 rounded-lg text-red-500 bg-red-500/10 hover:bg-red-500/20 transition-transform active:scale-90`}><Trash2 size={16}/></button>
+                    {!isActive && <button onClick={() => setActive(r.id)} className={`ml-auto px-4 py-1.5 text-sm font-bold rounded-lg border transition-all hover:scale-105 active:scale-95 ${t.accentText} ${t.accentBorder}`}>Activar</button>}
                   </div>
                 </div>
               );
@@ -504,7 +856,7 @@ export default function App() {
   };
 
   const RankingTab = () => {
-    const [subTab, setSubTab] = useState('ejercicios'); // 'ejercicios', 'musculos', 'consistencia'
+    const [subTab, setSubTab] = useState('ejercicios');
     const usersSet = Array.from(new Set(prs.map(p => p.nombre)));
 
     const renderTable = () => {
@@ -538,10 +890,10 @@ export default function App() {
       }
 
       if (subTab === 'musculos') {
-        const muscles = Array.from(new Set(Object.values(CATEGORY_MAP))).sort();
+        const muscles = Array.from(new Set(Object.values(CATEGORY_MAP).map(v => v.muscle))).sort();
         return muscles.map(m => {
           const counts = {};
-          prs.filter(p => getCategory(p.ejercicio) === m).forEach(p => counts[p.nombre] = (counts[p.nombre] || 0) + 1);
+          prs.filter(p => getMuscle(p.ejercicio) === m).forEach(p => counts[p.nombre] = (counts[p.nombre] || 0) + 1);
           const stats = usersSet.map(u => ({ name: u, count: counts[u] || 0 })).sort((a,b) => b.count - a.count);
           return (
             <div key={m} className={`rounded-2xl border mb-6 overflow-hidden ${t.card}`}>
@@ -583,7 +935,7 @@ export default function App() {
       <div className="space-y-6">
         <div className="flex bg-black/5 p-1 rounded-xl w-full max-w-md mx-auto">
           {['ejercicios', 'musculos', 'consistencia'].map(tab => (
-            <button key={tab} onClick={() => setSubTab(tab)} className={`flex-1 py-2 text-xs md:text-sm font-bold rounded-lg capitalize transition-all ${subTab === tab ? `${t.accentBg} text-white shadow-md` : 'opacity-60 hover:opacity-100'}`}>
+            <button key={tab} onClick={() => { playClickSound(); setSubTab(tab); }} className={`flex-1 py-2 text-xs md:text-sm font-bold rounded-lg capitalize transition-all active:scale-95 ${subTab === tab ? `${t.accentBg} text-white shadow-md` : 'opacity-60 hover:opacity-100'}`}>
               {tab}
             </button>
           ))}
@@ -596,96 +948,330 @@ export default function App() {
   const AnalyticsTab = () => {
     const allUsers = Array.from(new Set(prs.map(p => p.nombre))).sort();
     const [selectedUser, setSelectedUser] = useState(currentUser?.username || '');
+    const [selectedCategory, setSelectedCategory] = useState('TODOS');
+    const [selectedExercise, setSelectedExercise] = useState('TODOS');
     const [selectedMuscle, setSelectedMuscle] = useState('TODOS');
-    const [svgView, setSvgView] = useState('frente'); // 'frente', 'espalda'
-
-    const targetGender = selectedUser ? (selectedUser === currentUser?.username ? currentUser.gender : 'masculino') : 'masculino'; // defaults if viewing others without gender known
-    const activePaths = anatomyPaths[targetGender][svgView];
-    const userPrs = prs.filter(p => p.nombre === selectedUser);
+    const [timeRange, setTimeRange] = useState('TODOS');
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
     
-    // Line Chart Data Logic
-    const chartData = useMemo(() => {
-      const filtered = selectedMuscle === 'TODOS' ? userPrs : userPrs.filter(p => getCategory(p.ejercicio) === selectedMuscle);
-      const dataMap = {};
-      filtered.forEach(p => {
-        const dateKey = p.fecha.split('T')[0];
-        if (!dataMap[dateKey]) dataMap[dateKey] = { date: dateKey, volume: 0 };
-        dataMap[dateKey].volume += 1;
+    const [svgView, setSvgView] = useState('frente');
+    const [hoveredMuscle, setHoveredMuscle] = useState(null);
+    const [clickedMuscle, setClickedMuscle] = useState(null);
+
+    const targetSex = selectedUser ? (selectedUser === currentUser?.username ? currentUser.sex : 'masculino') : 'masculino';
+    const activePaths = ANATOMY_PATHS[targetSex][svgView];
+    
+    const filteredPrs = useMemo(() => {
+      if (!selectedUser) return [];
+      return prs.filter(p => {
+        if (p.nombre !== selectedUser) return false;
+        if (selectedCategory !== 'TODOS' && getCategory(p.ejercicio) !== selectedCategory) return false;
+        if (selectedExercise !== 'TODOS' && p.ejercicio !== selectedExercise) return false;
+        if (selectedMuscle !== 'TODOS' && getMuscle(p.ejercicio) !== selectedMuscle) return false;
+        
+        const prDate = new Date(p.fecha);
+        if (timeRange === '7D') {
+          const d7 = new Date(); d7.setDate(d7.getDate() - 7);
+          if (prDate < d7) return false;
+        } else if (timeRange === '30D') {
+          const d30 = new Date(); d30.setDate(d30.getDate() - 30);
+          if (prDate < d30) return false;
+        } else if (timeRange === '1Y') {
+          const d1y = new Date(); d1y.setFullYear(d1y.getFullYear() - 1);
+          if (prDate < d1y) return false;
+        } else if (timeRange === 'CUSTOM') {
+          if (startDate && new Date(startDate) > prDate) return false;
+          if (endDate && new Date(endDate) < prDate) return false;
+        }
+        return true;
       });
-      return Object.values(dataMap).sort((a,b) => new Date(a.date) - new Date(b.date)).map(d => ({ ...d, dateFormatted: new Date(d.date).toLocaleDateString([], {day:'2-digit',month:'2-digit'}) }));
-    }, [userPrs, selectedMuscle]);
+    }, [prs, selectedUser, selectedCategory, selectedExercise, selectedMuscle, timeRange, startDate, endDate]);
+
+    const muscleCounts = useMemo(() => {
+      const counts = {};
+      const userPrs = prs.filter(p => p.nombre === selectedUser);
+      userPrs.forEach(p => {
+        const m = getMuscle(p.ejercicio);
+        counts[m] = (counts[m] || 0) + 1;
+      });
+      return counts;
+    }, [prs, selectedUser]);
+
+    const maxMuscleCount = useMemo(() => {
+      const vals = Object.values(muscleCounts);
+      return vals.length > 0 ? Math.max(...vals) : 1;
+    }, [muscleCounts]);
+
+    const getHeatmapColor = (muscleId) => {
+      const count = muscleCounts[muscleId] || 0;
+      if (count === 0) return '#475569';
+      const ratio = Math.min(count / maxMuscleCount, 1);
+      const hue = 120 - ratio * 120;
+      return `hsl(${hue}, 85%, 50%)`;
+    };
+
+    const chart1Data = useMemo(() => {
+      const datesMap = {};
+      const cumulativeMaxes = {};
+
+      filteredPrs.forEach(p => {
+        const dKey = p.fecha.split('T')[0];
+        if (!datesMap[dKey]) datesMap[dKey] = { date: dKey, count: 0, prCount: 0 };
+        datesMap[dKey].count += 1;
+
+        if (p.peso !== null) {
+          const currentMax = cumulativeMaxes[p.ejercicio] || 0;
+          if (p.peso > currentMax) {
+            datesMap[dKey].prCount += 1;
+            cumulativeMaxes[p.ejercicio] = p.peso;
+          }
+        }
+      });
+
+      return Object.values(datesMap).sort((a,b) => new Date(a.date) - new Date(b.date)).map(d => ({
+        ...d,
+        dateFormatted: new Date(d.date).toLocaleDateString([], { day: '2-digit', month: '2-digit' })
+      }));
+    }, [filteredPrs]);
+
+    const chart2Data = useMemo(() => {
+      const exercisePrs = {};
+      filteredPrs.forEach(p => {
+        if (p.peso !== null) {
+          if (!exercisePrs[p.ejercicio] || p.peso > exercisePrs[p.ejercicio]) {
+            exercisePrs[p.ejercicio] = p.peso;
+          }
+        }
+      });
+      return Object.keys(exercisePrs).map(ex => ({
+        ejercicio: ex,
+        peso: exercisePrs[ex]
+      })).sort((a,b) => b.peso - a.peso);
+    }, [filteredPrs]);
+
+    const chart4Data = useMemo(() => {
+      if (!clickedMuscle) return [];
+      const userMusclePrs = prs.filter(p => p.nombre === selectedUser && getMuscle(p.ejercicio) === clickedMuscle);
+      const datesMap = {};
+      userMusclePrs.forEach(p => {
+        const dKey = p.fecha.split('T')[0];
+        if (!datesMap[dKey]) datesMap[dKey] = { date: dKey, count: 0 };
+        datesMap[dKey].count += 1;
+      });
+      return Object.values(datesMap).sort((a,b) => new Date(a.date) - new Date(b.date)).map(d => ({
+        ...d,
+        dateFormatted: new Date(d.date).toLocaleDateString([], { day: '2-digit', month: '2-digit' })
+      }));
+    }, [prs, selectedUser, clickedMuscle]);
+
+    const renderStarDot = (props) => {
+      const { cx, cy, payload, index } = props;
+      const uniqueKey = `star-dot-${cx}-${cy}-${index}`;
+
+      if (!payload || payload.prCount === 0) {
+        return <circle key={uniqueKey} cx={cx} cy={cy} r={4} fill={theme === 'dark' ? '#e53935' : '#1565c0'} />;
+      }
+      const starType = payload.prCount === 1 ? 'gold' : payload.prCount === 2 ? 'platinum' : 'cosmic';
+      const colors = { gold: '#FFD700', platinum: '#E5E4E2', cosmic: '#FF00FF' };
+
+      return (
+        <g key={uniqueKey} transform={`translate(${cx - 10}, ${cy - 10})`}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill={colors[starType]} stroke="#000" strokeWidth="1" className="drop-shadow-md animate-pulse">
+            <polygon points="12,2 15,9 22,9 16,14 18,21 12,17 6,21 8,14 2,9 9,9" />
+          </svg>
+        </g>
+      );
+    };
 
     return (
       <div className="space-y-6">
-        <div className={`p-4 md:p-6 rounded-2xl border ${t.card} flex flex-wrap gap-4 items-end`}>
-          <div className="flex-1 min-w-[150px]">
-            <label className={`block text-xs font-bold mb-1.5 ${t.textMuted}`}>Perfil a Analizar</label>
-            <select value={selectedUser} onChange={e => setSelectedUser(e.target.value)} className={`w-full p-2.5 rounded-lg border text-sm font-bold outline-none ${t.input}`}>
-              <option value="" disabled>Selecciona perfil...</option>
-              {allUsers.map(u => <option key={u} value={u}>{u}</option>)}
-            </select>
+        <div className={`p-4 md:p-6 rounded-2xl border ${t.card} space-y-4`}>
+          <div className="flex items-center gap-2 border-b pb-3 border-slate-500/20">
+            <Filter className={t.accentText} size={20} />
+            <h3 className="font-bold text-lg">Filtros Avanzados</h3>
           </div>
-          <div className="flex-1 min-w-[150px]">
-            <label className={`block text-xs font-bold mb-1.5 ${t.textMuted}`}>Filtrar Músculo</label>
-            <select value={selectedMuscle} onChange={e => setSelectedMuscle(e.target.value)} className={`w-full p-2.5 rounded-lg border text-sm font-bold outline-none ${t.input}`}>
-              <option value="TODOS">TODOS LOS MÚSCULOS</option>
-              {Array.from(new Set(Object.values(CATEGORY_MAP))).sort().map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
+          
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div>
+              <label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Persona</label>
+              <select value={selectedUser} onChange={e => { playClickSound(); setSelectedUser(e.target.value); }} className={`w-full p-2.5 rounded-lg border text-sm font-bold outline-none ${t.input}`}>
+                {allUsers.map(u => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Categoría</label>
+              <select value={selectedCategory} onChange={e => { playClickSound(); setSelectedCategory(e.target.value); setSelectedExercise('TODOS'); }} className={`w-full p-2.5 rounded-lg border text-sm font-bold outline-none ${t.input}`}>
+                <option value="TODOS">TODAS</option>
+                {Array.from(new Set(Object.values(CATEGORY_MAP).map(v => v.cat))).sort().map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Ejercicio</label>
+              <select value={selectedExercise} onChange={e => { playClickSound(); setSelectedExercise(e.target.value); }} className={`w-full p-2.5 rounded-lg border text-sm font-bold outline-none ${t.input}`}>
+                <option value="TODOS">TODOS</option>
+                {ejerciciosLista.filter(e => selectedCategory === 'TODOS' || getCategory(e) === selectedCategory).sort().map(ex => <option key={ex} value={ex}>{ex}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Músculo</label>
+              <select value={selectedMuscle} onChange={e => { playClickSound(); setSelectedMuscle(e.target.value); }} className={`w-full p-2.5 rounded-lg border text-sm font-bold outline-none ${t.input}`}>
+                <option value="TODOS">TODOS</option>
+                {Array.from(new Set(Object.values(CATEGORY_MAP).map(v => v.muscle))).sort().map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-3 items-center pt-2">
+            <span className={`text-xs font-bold ${t.textMuted}`}>Tiempo:</span>
+            {['TODOS', '7D', '30D', '1Y', 'CUSTOM'].map(r => (
+              <button key={r} onClick={() => { playClickSound(); setTimeRange(r); }} className={`px-3 py-1 rounded-lg text-xs font-bold transition-all active:scale-95 ${timeRange === r ? `${t.accentBg} text-white` : 'bg-black/5 hover:bg-black/10'}`}>
+                {r === 'TODOS' ? 'Todos' : r === '7D' ? 'Últimos 7d' : r === '30D' ? 'Último mes' : r === '1Y' ? 'Último año' : 'Personalizado'}
+              </button>
+            ))}
+
+            {timeRange === 'CUSTOM' && (
+              <div className="flex items-center gap-2 mt-2 sm:mt-0 w-full sm:w-auto">
+                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={`p-1.5 rounded-lg border text-xs ${t.input}`} />
+                <span>a</span>
+                <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={`p-1.5 rounded-lg border text-xs ${t.input}`} />
+              </div>
+            )}
           </div>
         </div>
 
-        {selectedUser && (
-          <div className="grid lg:grid-cols-[1fr_300px] gap-6">
-            <div className={`p-4 md:p-6 rounded-2xl border ${t.card} flex flex-col`}>
-              <h3 className="text-lg font-bold mb-6">Volumen de Entrenamiento {selectedMuscle !== 'TODOS' ? `(${selectedMuscle})` : ''}</h3>
-              <div className="h-64 w-full mt-auto">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData} margin={{ top: 5, right: 10, bottom: 5, left: -20 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#475569' : '#e2e8f0'} vertical={false} />
-                    <XAxis dataKey="dateFormatted" stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} tickLine={false} axisLine={false} dy={10} />
-                    <YAxis stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} tickLine={false} axisLine={false} dx={-10} allowDecimals={false} />
-                    <Tooltip contentStyle={{ backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', borderColor: theme === 'dark' ? '#334155' : '#e2e8f0', borderRadius: '8px', color: theme === 'dark' ? '#fff' : '#000', fontSize: '12px' }} formatter={(val) => [val, 'Ejercicios']} />
-                    <Line type="monotone" dataKey="volume" stroke={theme === 'dark' ? '#e53935' : '#1565c0'} strokeWidth={3} dot={{r:4}} activeDot={{ r: 6 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className={`p-4 md:p-6 rounded-2xl border ${t.card} flex flex-col items-center relative overflow-hidden`}>
-              <div className="flex justify-between w-full mb-4 items-center">
-                <h3 className="font-bold">Mapa Muscular</h3>
-                <button onClick={() => setSvgView(svgView === 'frente' ? 'espalda' : 'frente')} className={`text-xs px-2 py-1 rounded-lg border ${t.accentBorder} ${t.accentText}`}>Ver {svgView === 'frente' ? 'Espalda' : 'Frente'}</button>
-              </div>
-              
-              <svg viewBox="0 0 100 200" className="w-full max-w-[160px] drop-shadow-xl overflow-visible">
-                <g stroke={theme === 'dark' ? '#2c2c2c' : '#ffffff'} strokeWidth="1.5" strokeLinejoin="round">
-                  {/* Generic Silhouette Base */}
-                  <ellipse cx="50" cy="18" rx="8" ry="11" fill={theme === 'dark' ? '#333' : '#e2e8f0'} />
-                  <path d="M22,70 L30,55 L70,55 L78,70 Z" fill={theme === 'dark' ? '#333' : '#e2e8f0'} /> {/* arms generic */}
-                  <path d="M35,130 L45,130 L42,165 L30,165 Z M65,130 L55,130 L58,165 L70,165 Z" fill={theme === 'dark' ? '#333' : '#e2e8f0'} /> {/* lower legs generic */}
-                  
-                  {activePaths.map(p => (
-                    <path key={p.id} d={p.d} fill={getMuscleColor(p.id, userPrs)} onClick={() => setSelectedMuscle(p.id)} className="transition-all duration-500 cursor-pointer hover:brightness-125 hover:drop-shadow-lg">
-                      <title>{p.id}</title>
-                    </path>
-                  ))}
-                </g>
-              </svg>
-              
-              <div className="mt-4 w-full flex flex-wrap gap-1 justify-center opacity-80 text-[10px]">
-                <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"></span> {'<'}9d</div>
-                <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-500"></span> {'>'}9d</div>
-                <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-500"></span> {'>'}18d</div>
-                <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500"></span> {'>'}27d</div>
-              </div>
+        <div className={`p-4 md:p-6 rounded-2xl border ${t.card}`}>
+          <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+            <h3 className="font-bold text-lg">Progreso de Actividad y Récords</h3>
+            <div className="flex gap-3 text-xs">
+              <span className="flex items-center gap-1"><span className="text-amber-400">★</span> 1 PR</span>
+              <span className="flex items-center gap-1"><span className="text-slate-300">★</span> 2 PRs</span>
+              <span className="flex items-center gap-1"><span className="text-pink-500">★</span> 3+ PRs</span>
             </div>
           </div>
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chart1Data} margin={{ top: 15, right: 10, bottom: 5, left: -20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#334155' : '#e2e8f0'} vertical={false} />
+                <XAxis dataKey="dateFormatted" stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} axisLine={false} tickLine={false} dy={10} />
+                <YAxis stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} axisLine={false} tickLine={false} allowDecimals={false} dx={-10} />
+                <Tooltip contentStyle={{ backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', borderRadius: '12px', borderColor: '#475569', color: theme === 'dark' ? '#fff' : '#000' }} formatter={(val, name, item) => [`${val} ejercicios (${item.payload.prCount} PRs)`, 'Actividad']} />
+                <Line type="monotone" dataKey="count" stroke={theme === 'dark' ? '#e53935' : '#1565c0'} strokeWidth={3} dot={renderStarDot} activeDot={{ r: 7 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="grid lg:grid-cols-2 gap-6">
+          <div className={`p-4 md:p-6 rounded-2xl border ${t.card} flex flex-col`}>
+            <h3 className="font-bold text-lg mb-4">Histograma Invertido de PRs (kg)</h3>
+            {chart2Data.length === 0 ? (
+              <div className={`my-auto text-center p-8 ${t.textMuted}`}>Sin datos registrados.</div>
+            ) : (
+              <div className="h-80 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chart2Data} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 40 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={theme === 'dark' ? '#334155' : '#e2e8f0'} />
+                    <XAxis type="number" stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} axisLine={false} tickLine={false} />
+                    <YAxis dataKey="ejercicio" type="category" stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={9} axisLine={false} tickLine={false} width={80} />
+                    <Tooltip contentStyle={{ backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', borderRadius: '12px', color: theme === 'dark' ? '#fff' : '#000' }} formatter={(val) => [`${val} kg`, 'Máximo PR']} />
+                    <Bar dataKey="peso" radius={[0, 8, 8, 0]}>
+                      {chart2Data.map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={theme === 'dark' ? `hsl(${350 - index * 10}, 75%, 50%)` : `hsl(${210 + index * 10}, 75%, 50%)`} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
+          <div className={`p-4 md:p-6 rounded-2xl border ${t.card} flex flex-col items-center relative overflow-hidden`}>
+            <div className="flex justify-between w-full mb-4 items-center">
+              <div>
+                <h3 className="font-bold text-lg">Mapa Muscular Corporal</h3>
+                <p className={`text-xs ${t.textMuted}`}>Verde = Menos Entrenado | Rojo = Más Entrenado</p>
+              </div>
+              <button onClick={() => { playClickSound(); setSvgView(svgView === 'frente' ? 'espalda' : 'frente'); }} className={`text-xs px-3 py-1.5 rounded-lg border font-bold transition-all hover:scale-105 active:scale-95 ${t.accentBorder} ${t.accentText}`}>
+                Ver {svgView === 'frente' ? 'Espalda' : 'Frente'}
+              </button>
+            </div>
+
+            {hoveredMuscle && (
+              <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-black/80 text-white px-3 py-1.5 rounded-lg text-xs font-bold z-20 pointer-events-none backdrop-blur-md border border-white/20">
+                {hoveredMuscle.label}: {muscleCounts[hoveredMuscle.id] || 0} ejercicios realizados
+              </div>
+            )}
+
+            <div className="relative w-full flex justify-center py-4">
+              <svg viewBox="0 0 200 260" className="w-full max-w-[200px] drop-shadow-2xl overflow-visible">
+                <g stroke={theme === 'dark' ? '#111' : '#fff'} strokeWidth="1.5" strokeLinejoin="round">
+                  <ellipse cx="100" cy="24" rx="14" ry="18" fill={theme === 'dark' ? '#262626' : '#e2e8f0'} />
+                  <path d="M 86,40 L 114,40 L 126,50 L 74,50 Z" fill={theme === 'dark' ? '#262626' : '#e2e8f0'} />
+                  <path d="M 52,86 L 44,130 L 36,130 L 46,80 Z M 148,86 L 156,130 L 164,130 L 154,80 Z" fill={theme === 'dark' ? '#262626' : '#e2e8f0'} />
+                  <path d="M 72,218 L 82,250 L 68,250 Z M 128,218 L 118,250 L 132,250 Z" fill={theme === 'dark' ? '#262626' : '#e2e8f0'} />
+
+                  {activePaths.map(p => {
+                    const isSelected = clickedMuscle === p.id;
+                    return (
+                      <path 
+                        key={p.id} 
+                        d={p.d} 
+                        fill={getHeatmapColor(p.id)} 
+                        stroke={isSelected ? '#00e676' : theme === 'dark' ? '#111' : '#fff'}
+                        strokeWidth={isSelected ? '3' : '1.5'}
+                        onMouseEnter={() => setHoveredMuscle(p)}
+                        onMouseLeave={() => setHoveredMuscle(null)}
+                        onClick={() => { playClickSound(); setClickedMuscle(p.id); }}
+                        className="transition-all duration-300 cursor-pointer hover:brightness-125 hover:scale-105 transform origin-center"
+                      >
+                        <title>{p.label}</title>
+                      </path>
+                    );
+                  })}
+                </g>
+              </svg>
+            </div>
+
+            <div className="mt-2 text-center text-xs">
+              <span className={t.textMuted}>Haz click en un músculo para ver su evolución diaria.</span>
+            </div>
+          </div>
+        </div>
+
+        {clickedMuscle && (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className={`p-4 md:p-6 rounded-2xl border ${t.card}`}>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-lg flex items-center gap-2">
+                <Sparkles className={t.accentText} size={20} />
+                Evolución Diaria: Músculo {clickedMuscle}
+              </h3>
+              <button onClick={() => { playClickSound(); setClickedMuscle(null); }} className="text-xs px-2 py-1 bg-black/10 rounded-lg hover:bg-black/20"><X size={16}/></button>
+            </div>
+            {chart4Data.length === 0 ? (
+              <p className={`text-center p-8 ${t.textMuted}`}>No hay registros para el músculo {clickedMuscle}.</p>
+            ) : (
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chart4Data} margin={{ top: 10, right: 10, bottom: 5, left: -20 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#334155' : '#e2e8f0'} vertical={false} />
+                    <XAxis dataKey="dateFormatted" stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} axisLine={false} tickLine={false} />
+                    <YAxis stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} axisLine={false} tickLine={false} allowDecimals={false} />
+                    <Tooltip contentStyle={{ backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', borderRadius: '12px', color: theme === 'dark' ? '#fff' : '#000' }} formatter={(val) => [`${val} ejercicios`, 'Volumen']} />
+                    <Bar dataKey="count" fill={theme === 'dark' ? '#e53935' : '#1565c0'} radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </motion.div>
         )}
       </div>
     );
   };
 
-  // --- Main Layout ---
   if (loading) return (
     <div className={`min-h-screen flex flex-col justify-center items-center ${t.bg} ${t.text}`}>
       <div className={`animate-spin rounded-full h-12 w-12 border-b-2 mb-4 ${t.accentBorder}`}></div>
@@ -696,7 +1282,7 @@ export default function App() {
   if (!currentUser) return <LoginScreen />;
 
   const TabButton = ({ id, icon: Icon, label }) => (
-    <button onClick={() => setActiveTab(id)} className={`flex-1 py-3 md:py-0 md:px-4 md:h-10 rounded-xl md:rounded-lg flex flex-col md:flex-row items-center justify-center gap-1 text-xs md:text-sm font-bold transition-all ${activeTab === id ? `${t.accentBg} text-white shadow-md transform scale-105 md:scale-100` : `opacity-60 hover:opacity-100 hover:bg-black/5`}`}>
+    <button onClick={() => { playClickSound(); setActiveTab(id); }} className={`flex-1 py-3 md:py-0 md:px-4 md:h-10 rounded-xl md:rounded-lg flex flex-col md:flex-row items-center justify-center gap-1 text-xs md:text-sm font-bold transition-all hover:scale-105 active:scale-95 ${activeTab === id ? `${t.accentBg} text-white shadow-md` : `opacity-60 hover:opacity-100`}`}>
       <Icon size={18} /> <span className="hidden sm:inline md:inline">{label}</span>
     </button>
   );
@@ -719,9 +1305,9 @@ export default function App() {
             <div className="hidden md:flex items-center gap-4 border-l pl-4 border-slate-500/20">
               <div className="text-right">
                 <p className="text-sm font-bold">{currentUser.username}</p>
-                <button onClick={() => { localStorage.removeItem('gymTrackerSession'); setCurrentUser(null); }} className={`text-[10px] ${t.textMuted} hover:underline`}>Cerrar Sesión</button>
+                <button onClick={() => { playClickSound(); localStorage.removeItem('gymTrackerSession'); setCurrentUser(null); }} className={`text-[10px] ${t.textMuted} hover:underline`}>Cerrar Sesión</button>
               </div>
-              <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="p-2 rounded-full hover:bg-black/10 transition-colors">
+              <button onClick={() => { playClickSound(); setTheme(theme === 'dark' ? 'light' : 'dark'); }} className="p-2 rounded-full hover:bg-black/10 transition-transform active:scale-90">
                 {theme === 'dark' ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} className="text-indigo-600" />}
               </button>
             </div>
@@ -729,7 +1315,6 @@ export default function App() {
         </div>
       </nav>
 
-      {/* Global Emoji Animations */}
       <AnimatePresence>
         {animations.map(anim => (
           <motion.div key={anim.id} initial={{ opacity: 1, x: 0, y: window.innerHeight, rotate: 0 }} animate={{ opacity: 0, x: anim.x, y: anim.y, rotate: anim.rotation }} transition={{ duration: 2.5, ease: "easeOut" }} className="fixed text-4xl md:text-5xl pointer-events-none z-50 left-1/2 bottom-0">
