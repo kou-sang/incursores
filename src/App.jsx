@@ -7,18 +7,19 @@ import {
   sendPasswordResetEmail,
   onAuthStateChanged,
   updateProfile,
+  updatePassword,
   GoogleAuthProvider,
   signInWithPopup,
   signOut
 } from 'firebase/auth';
 import { 
-  getFirestore, collection, addDoc, onSnapshot, doc, getDoc, deleteDoc, updateDoc, setDoc 
+  getFirestore, collection, addDoc, onSnapshot, doc, getDoc, deleteDoc, updateDoc, setDoc, arrayUnion, arrayRemove, query, where, getDocs 
 } from 'firebase/firestore';
 import { 
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell 
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend 
 } from 'recharts';
 import { 
-  Trophy, Activity, Dumbbell, Sun, Moon, Plus, Home, Calendar, Edit2, Copy, Trash2, Share2, Check, X, Filter, Sparkles, User, ArrowLeft 
+  Trophy, Activity, Dumbbell, Sun, Moon, Plus, Home, Calendar, Edit2, Copy, Trash2, Share2, Check, X, Filter, Sparkles, User, Settings, Users, LogOut 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -33,67 +34,53 @@ const firebaseConfig = {
   projectId: getEnv('VITE_FIREBASE_PROJECT_ID') || "incursores",
   storageBucket: getEnv('VITE_FIREBASE_STORAGE_BUCKET') || "incursores.firebasestorage.app",
   messagingSenderId: getEnv('VITE_FIREBASE_MESSAGING_SENDER_ID') || "977966837929",
-  appId: getEnv('VITE_FIREBASE_APP_ID') || "1:977966837929:web:ad9f2ea6702a39d37f39b8",
-  measurementId: getEnv('VITE_FIREBASE_MEASUREMENT_ID') || "G-Q9GJ1QTRT6"
+  appId: getEnv('VITE_FIREBASE_APP_ID') || "1:977966837929:web:ad9f2ea6702a39d37f39b8"
 };
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 
-// --- Días y Mapeo de Categorías Musculares ---
+// --- Días y Mapeo de Categorías Musculares con Porcentajes (Términos Argentinos) ---
 const DAYS = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
 
+// Diccionario ampliado con porcentajes de activación muscular
 const CATEGORY_MAP = {
-  'PRESS BANCA': { cat: 'PECHO', muscle: 'pecho' },
-  'PRESS INCLINADO': { cat: 'PECHO', muscle: 'pecho' },
-  'MARIPOSA': { cat: 'PECHO', muscle: 'pecho' },
-  'PRESS MAQUINA': { cat: 'PECHO', muscle: 'pecho' },
-  'FLEXIONES': { cat: 'PECHO', muscle: 'pecho' },
-  'PULLOVER': { cat: 'PECHO', muscle: 'pecho' },
-  'PRESS HOMBRO': { cat: 'HOMBRO', muscle: 'hombros' },
-  'PRESS HOMBRO BARRAS': { cat: 'HOMBRO', muscle: 'hombros' },
-  'VUELOS LATERALES': { cat: 'HOMBRO', muscle: 'hombros' },
-  'VUELOS ANTERIORES': { cat: 'HOMBRO', muscle: 'hombros' },
-  'VUELOS POSTERIORES': { cat: 'HOMBRO', muscle: 'hombros' },
-  'REMO MENTON': { cat: 'HOMBRO', muscle: 'hombros' },
-  'FACE PULL': { cat: 'HOMBRO', muscle: 'hombros' },
-  'PESO MUERTO': { cat: 'ESPALDA', muscle: 'espalda' },
-  'JALON AL PECHO': { cat: 'ESPALDA', muscle: 'espalda' },
-  'REMO CON BARRA': { cat: 'ESPALDA', muscle: 'espalda' },
-  'REMO BAJO': { cat: 'ESPALDA', muscle: 'espalda' },
-  'REMO T': { cat: 'ESPALDA', muscle: 'espalda' },
-  'REMO UNILATERAL': { cat: 'ESPALDA', muscle: 'espalda' },
-  'DOMINADAS': { cat: 'ESPALDA', muscle: 'espalda' },
-  'CURL CON BARRA': { cat: 'BICEPS', muscle: 'biceps' },
-  'CURL POLEA': { cat: 'BICEPS', muscle: 'biceps' },
-  'SCOTT': { cat: 'BICEPS', muscle: 'biceps' },
-  'BICEP CONCENTRADO': { cat: 'BICEPS', muscle: 'biceps' },
-  'ALT CON MANCUERNA': { cat: 'BICEPS', muscle: 'biceps' },
-  'BAYESIANA': { cat: 'BICEPS', muscle: 'biceps' },
-  'CURL BICEPS INCLINADO': { cat: 'BICEPS', muscle: 'biceps' },
-  'EXT POLEA ALTA': { cat: 'TRICEPS', muscle: 'triceps' },
-  'FONDOS': { cat: 'TRICEPS', muscle: 'triceps' },
-  'PRESS FRANCES': { cat: 'TRICEPS', muscle: 'triceps' },
-  'EXT CON MANCUERNA': { cat: 'TRICEPS', muscle: 'triceps' },
-  'EXT COPA': { cat: 'TRICEPS', muscle: 'triceps' },
-  'TRASNUCA': { cat: 'TRICEPS', muscle: 'triceps' },
-  'SENTADILLA': { cat: 'PIERNAS', muscle: 'cuadriceps' },
-  'HACK': { cat: 'PIERNAS', muscle: 'cuadriceps' },
-  'CUADRICEPS': { cat: 'PIERNAS', muscle: 'cuadriceps' },
-  'PRENSA 45°': { cat: 'PIERNAS', muscle: 'cuadriceps' },
-  'ESTOCADAS': { cat: 'PIERNAS', muscle: 'cuadriceps' },
-  'ISQUIOTIBIALES': { cat: 'PIERNAS', muscle: 'isquiotibiales' },
-  'PATADA DE GLUTEO': { cat: 'PIERNAS', muscle: 'gluteos' },
-  'HIP THRUST': { cat: 'PIERNAS', muscle: 'gluteos' },
-  'MULTICADERA': { cat: 'PIERNAS', muscle: 'gluteos' },
-  'SOLEO': { cat: 'PIERNAS', muscle: 'gemelos' },
-  'ABDUCTOR': { cat: 'PIERNAS', muscle: 'aductores' },
-  'ADUCTOR': { cat: 'PIERNAS', muscle: 'aductores' }
+  'PRESS BANCA PLANO': { cat: 'PECHO', muscles: { pecho: 0.7, triceps: 0.2, hombro_anterior: 0.1 } },
+  'PRESS BANCA INCLINADO': { cat: 'PECHO', muscles: { pecho: 0.6, hombro_anterior: 0.3, triceps: 0.1 } },
+  'APERTURAS CON MANCUERNAS': { cat: 'PECHO', muscles: { pecho: 0.9, hombro_anterior: 0.1 } },
+  'PEC DEC': { cat: 'PECHO', muscles: { pecho: 0.95, hombro_anterior: 0.05 } },
+  'CRUCES EN POLEA': { cat: 'PECHO', muscles: { pecho: 0.9, hombro_anterior: 0.1 } },
+  'PRESS MILITAR': { cat: 'HOMBRO', muscles: { hombro_anterior: 0.6, hombro_lateral: 0.2, triceps: 0.2 } },
+  'VUELOS LATERALES': { cat: 'HOMBRO', muscles: { hombro_lateral: 0.85, trapecio: 0.15 } },
+  'VUELOS FRONTALES': { cat: 'HOMBRO', muscles: { hombro_anterior: 0.9, pecho: 0.1 } },
+  'FACE PULL': { cat: 'HOMBRO', muscles: { hombro_posterior: 0.6, trapecio: 0.3, dorsal: 0.1 } },
+  'REMO AL MENTON': { cat: 'HOMBRO', muscles: { trapecio: 0.6, hombro_lateral: 0.4 } },
+  'DOMINADAS': { cat: 'ESPALDA', muscles: { dorsal: 0.7, biceps: 0.2, trapecio: 0.1 } },
+  'JALON AL PECHO': { cat: 'ESPALDA', muscles: { dorsal: 0.75, biceps: 0.15, trapecio: 0.1 } },
+  'SERRUCHO': { cat: 'ESPALDA', muscles: { dorsal: 0.7, trapecio: 0.15, biceps: 0.15 } },
+  'REMO EN POLEA BAJA': { cat: 'ESPALDA', muscles: { dorsal: 0.6, trapecio: 0.3, biceps: 0.1 } },
+  'PESO MUERTO CONVENCIONAL': { cat: 'ESPALDA', muscles: { lumbar: 0.4, gluteos: 0.3, isquios: 0.2, trapecio: 0.1 } },
+  'PESO MUERTO RUMANO': { cat: 'PIERNAS', muscles: { isquios: 0.6, gluteos: 0.3, lumbar: 0.1 } },
+  'BUENOS DIAS': { cat: 'PIERNAS', muscles: { lumbar: 0.5, isquios: 0.3, gluteos: 0.2 } },
+  'SILLON DE CUADRICEPS': { cat: 'PIERNAS', muscles: { cuadriceps: 1.0 } },
+  'CAMILLA DE ISQUIOS': { cat: 'PIERNAS', muscles: { isquios: 1.0 } },
+  'PRENSA 45': { cat: 'PIERNAS', muscles: { cuadriceps: 0.6, gluteos: 0.3, isquios: 0.1 } },
+  'SENTADILLA LIBRE': { cat: 'PIERNAS', muscles: { cuadriceps: 0.5, gluteos: 0.3, isquios: 0.1, lumbar: 0.1 } },
+  'ESTOCADAS': { cat: 'PIERNAS', muscles: { cuadriceps: 0.5, gluteos: 0.4, isquios: 0.1 } },
+  'SENTADILLA BULGARA': { cat: 'PIERNAS', muscles: { gluteos: 0.5, cuadriceps: 0.4, isquios: 0.1 } },
+  'GEMELOS EN MAQUINA': { cat: 'PIERNAS', muscles: { gemelos: 1.0 } },
+  'CURL CON BARRA': { cat: 'BICEPS', muscles: { biceps: 0.9, antebrazo: 0.1 } },
+  'CURL MARTILLO': { cat: 'BICEPS', muscles: { antebrazo: 0.6, biceps: 0.4 } },
+  'CURL CONCENTRADO': { cat: 'BICEPS', muscles: { biceps: 1.0 } },
+  'PRESS FRANCES': { cat: 'TRICEPS', muscles: { triceps: 1.0 } },
+  'EXTENSIONES EN POLEA': { cat: 'TRICEPS', muscles: { triceps: 1.0 } },
+  'FONDOS EN PARALELAS': { cat: 'TRICEPS', muscles: { triceps: 0.6, pecho: 0.3, hombro_anterior: 0.1 } },
+  'CRUNCH ABDOMINAL': { cat: 'CORE', muscles: { abs: 1.0 } },
+  'PLANCHA': { cat: 'CORE', muscles: { abs: 0.8, lumbar: 0.2 } },
 };
 
 const getCategory = (ej) => CATEGORY_MAP[ej?.toUpperCase()]?.cat || 'OTROS';
-const getMuscle = (ej) => CATEGORY_MAP[ej?.toUpperCase()]?.muscle || 'otros';
 const ejerciciosListaInicial = Object.keys(CATEGORY_MAP);
 
 // --- Sonidos ---
@@ -104,92 +91,72 @@ const playClickSound = () => {
     const ctx = new AudioCtx();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(440, ctx.currentTime);
-    gain.gain.setValueAtTime(0.02, ctx.currentTime);
+    osc.type = 'sine'; osc.frequency.setValueAtTime(500, ctx.currentTime);
+    gain.gain.setValueAtTime(0.03, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.05);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(); osc.stop(ctx.currentTime + 0.05);
   } catch (e) {}
 };
 
-const playSuccessSound = (isNewPr = false) => {
-  try {
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    const notes = isNewPr ? [523.25, 659.25, 783.99, 1046.50] : [523.25, 659.25];
-    notes.forEach((freq, idx) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.08);
-      gain.gain.setValueAtTime(0.05, ctx.currentTime + idx * 0.08);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.08 + 0.2);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(ctx.currentTime + idx * 0.08);
-      osc.stop(ctx.currentTime + idx * 0.08 + 0.2);
-    });
-  } catch (e) {}
+// --- Colores y Utilidades ---
+const CHART_COLORS = ['#58a6ff', '#3fb950', '#f85149', '#d2a8ff', '#e3b341', '#a371f7'];
+
+const getHeatmapColor = (intensityRatio) => {
+  // intensityRatio va de 0.0 (nada entrenado) a 1.0 (muy entrenado)
+  if (intensityRatio === 0) return '#161b22'; // Fondo oscuro GitHub
+  // Gradiente: 0.1 = #0e4429, 0.5 = #006d32, 0.8 = #26a641, 1.0 = #39d353 (GitHub heatmap)
+  if (intensityRatio < 0.25) return '#0e4429';
+  if (intensityRatio < 0.50) return '#006d32';
+  if (intensityRatio < 0.75) return '#26a641';
+  return '#39d353';
 };
 
-// --- Colores Musculares (Gradiente Dinámico según Días) ---
-const getMuscleColorByDays = (lastTrainedDate) => {
-  if (!lastTrainedDate) return '#ef4444'; // Rojo si nunca se entrenó
-  const diffDays = (new Date() - new Date(lastTrainedDate)) / (1000 * 3600 * 24);
-  
-  if (diffDays <= 9) {
-    const hue = 120 - (diffDays / 9) * 60; // 120=Verde, 60=Amarillo
-    return `hsl(${hue}, 85%, 45%)`;
-  } else if (diffDays <= 18) {
-    const hue = 60 - ((diffDays - 9) / 9) * 30; // 60=Amarillo, 30=Naranja
-    return `hsl(${hue}, 90%, 50%)`;
-  } else if (diffDays <= 27) {
-    const hue = 30 - ((diffDays - 18) / 9) * 30; // 30=Naranja, 0=Rojo
-    return `hsl(${hue}, 90%, 50%)`;
-  }
-  return '#ef4444'; // >27 días = Rojo
-};
-
-// VECTORES ANATÓMICOS REALISTAS (MASCULINO Y FEMENINO)
+// VECTORES ANATÓMICOS REALISTAS POLIGONALES (ESTILO POP-ART REFERENCIA)
+// Utilizando segmentos angulares cerrados (Z) y líneas (L) para imitar los bloques de la imagen.
 const ANATOMY_PATHS = {
   masculino: {
     frente: [
-      { id: 'pecho', label: 'Pecho', d: 'M 70 55 C 80 50, 95 65, 100 65 C 105 65, 120 50, 130 55 C 135 70, 120 80, 100 80 C 80 80, 65 70, 70 55 Z' },
-      { id: 'hombros', label: 'Hombros', d: 'M 70 55 C 60 50, 48 55, 45 70 C 45 80, 55 85, 60 75 C 65 65, 68 60, 70 55 Z M 130 55 C 140 50, 152 55, 155 70 C 155 80, 145 85, 140 75 C 135 65, 132 60, 130 55 Z' },
-      { id: 'abdominales', label: 'Abdominales', d: 'M 82 82 C 100 85, 100 85, 118 82 C 115 110, 120 130, 100 135 C 80 130, 85 110, 82 82 Z' },
-      { id: 'biceps', label: 'Bíceps', d: 'M 60 75 C 50 85, 45 100, 50 110 C 55 115, 65 100, 65 90 C 65 85, 62 80, 60 75 Z M 140 75 C 150 85, 155 100, 150 110 C 145 115, 135 100, 135 90 C 135 85, 138 80, 140 75 Z' },
-      { id: 'cuadriceps', label: 'Cuádriceps', d: 'M 95 140 C 95 170, 90 210, 80 220 C 65 210, 60 170, 75 140 C 80 135, 90 135, 95 140 Z M 105 140 C 105 170, 110 210, 120 220 C 135 210, 140 170, 125 140 C 120 135, 110 135, 105 140 Z' },
-      { id: 'aductores', label: 'Aductores', d: 'M 95 140 C 98 160, 95 190, 85 200 C 90 180, 95 150, 95 140 Z M 105 140 C 102 160, 105 190, 115 200 C 110 180, 105 150, 105 140 Z' },
-      { id: 'gemelos', label: 'Gemelos', d: 'M 80 230 C 70 250, 70 270, 75 290 C 85 290, 90 260, 88 230 Z M 120 230 C 130 250, 130 270, 125 290 C 115 290, 110 260, 112 230 Z' }
+      { id: 'pecho', label: 'Pecho Plana/Sup', d: 'M 72 50 L 98 55 L 98 75 L 85 80 L 70 65 Z M 128 50 L 102 55 L 102 75 L 115 80 L 130 65 Z' },
+      { id: 'abs', label: 'Abdomen (Core)', d: 'M 85 82 L 98 82 L 98 95 L 85 92 Z M 102 82 L 115 82 L 115 92 L 102 95 Z M 85 95 L 98 98 L 98 110 L 85 108 Z M 102 98 L 115 95 L 115 108 L 102 110 Z M 87 111 L 98 113 L 98 125 L 92 130 Z M 102 113 L 113 111 L 108 130 L 102 125 Z' },
+      { id: 'hombro_anterior', label: 'Deltoides Anterior', d: 'M 70 48 L 58 55 L 54 70 L 65 72 Z M 130 48 L 142 55 L 146 70 L 135 72 Z' },
+      { id: 'hombro_lateral', label: 'Deltoides Lateral', d: 'M 58 55 L 48 65 L 50 82 L 54 70 Z M 142 55 L 152 65 L 150 82 L 146 70 Z' },
+      { id: 'biceps', label: 'Bíceps', d: 'M 54 72 L 62 75 L 60 95 L 48 90 Z M 146 72 L 138 75 L 140 95 L 152 90 Z' },
+      { id: 'antebrazo', label: 'Antebrazo', d: 'M 48 92 L 60 97 L 55 125 L 42 120 Z M 152 92 L 140 97 L 145 125 L 158 120 Z' },
+      { id: 'cuadriceps', label: 'Cuádriceps', d: 'M 75 140 L 95 140 L 90 195 L 70 190 Z M 125 140 L 105 140 L 110 195 L 130 190 Z' },
+      { id: 'gemelos', label: 'Gemelos', d: 'M 70 205 L 85 205 L 80 250 L 65 245 Z M 130 205 L 115 205 L 120 250 L 135 245 Z' }
     ],
     espalda: [
-      { id: 'espalda', label: 'Espalda (Dorsales)', d: 'M 80 40 C 100 55, 100 55, 120 40 C 135 70, 120 115, 100 120 C 80 115, 65 70, 80 40 Z' },
-      { id: 'triceps', label: 'Tríceps', d: 'M 65 65 C 50 75, 45 95, 52 110 C 60 100, 62 85, 65 65 Z M 135 65 C 150 75, 155 95, 148 110 C 140 100, 138 85, 135 65 Z' },
-      { id: 'gluteos', label: 'Glúteos', d: 'M 80 120 C 100 115, 100 115, 120 120 C 135 145, 115 160, 100 160 C 85 160, 65 145, 80 120 Z' },
-      { id: 'isquiotibiales', label: 'Isquiotibiales', d: 'M 80 160 C 95 170, 95 210, 85 225 C 70 210, 65 175, 80 160 Z M 120 160 C 105 170, 105 210, 115 225 C 130 210, 135 175, 120 160 Z' },
-      { id: 'gemelos', label: 'Gemelos', d: 'M 85 230 C 95 250, 95 270, 80 290 C 70 290, 70 250, 85 230 Z M 115 230 C 105 250, 105 270, 120 290 C 130 290, 130 250, 115 230 Z' }
+      { id: 'trapecio', label: 'Trapecio', d: 'M 100 35 L 115 48 L 100 70 L 85 48 Z' },
+      { id: 'dorsal', label: 'Dorsales', d: 'M 82 50 L 98 72 L 95 110 L 72 80 Z M 118 50 L 102 72 L 105 110 L 128 80 Z' },
+      { id: 'lumbar', label: 'Lumbares', d: 'M 95 112 L 105 112 L 110 128 L 90 128 Z' },
+      { id: 'hombro_posterior', label: 'Deltoides Posterior', d: 'M 75 48 L 60 55 L 65 75 L 80 65 Z M 125 48 L 140 55 L 135 75 L 120 65 Z' },
+      { id: 'triceps', label: 'Tríceps', d: 'M 65 78 L 50 82 L 55 105 L 68 100 Z M 135 78 L 150 82 L 145 105 L 132 100 Z' },
+      { id: 'gluteos', label: 'Glúteos', d: 'M 90 130 L 110 130 L 115 160 L 100 165 L 85 160 Z' },
+      { id: 'isquios', label: 'Isquiotibiales', d: 'M 82 165 L 98 165 L 92 205 L 75 200 Z M 118 165 L 102 165 L 108 205 L 125 200 Z' },
+      { id: 'gemelos', label: 'Gemelos', d: 'M 75 210 L 90 210 L 85 255 L 70 250 Z M 125 210 L 110 210 L 115 255 L 130 250 Z' }
     ]
   },
   femenino: {
     frente: [
-      { id: 'pecho', label: 'Pecho', d: 'M 72 55 C 80 50, 95 65, 100 65 C 105 65, 120 50, 128 55 C 135 70, 120 85, 100 85 C 80 85, 65 70, 72 55 Z' },
-      { id: 'hombros', label: 'Hombros', d: 'M 72 55 C 62 50, 52 55, 50 70 C 50 80, 58 85, 62 75 C 65 65, 68 60, 72 55 Z M 128 55 C 138 50, 148 55, 150 70 C 150 80, 142 85, 138 75 C 135 65, 132 60, 128 55 Z' },
-      { id: 'abdominales', label: 'Abdominales', d: 'M 85 85 C 100 88, 100 88, 115 85 C 112 110, 120 135, 100 140 C 80 135, 88 110, 85 85 Z' },
-      { id: 'biceps', label: 'Bíceps', d: 'M 62 75 C 52 85, 48 100, 52 110 C 58 115, 65 100, 65 90 C 65 85, 64 80, 62 75 Z M 138 75 C 148 85, 152 100, 148 110 C 142 115, 135 100, 135 90 C 135 85, 136 80, 138 75 Z' },
-      { id: 'cuadriceps', label: 'Cuádriceps', d: 'M 100 140 C 95 160, 95 200, 85 210 C 65 200, 60 160, 72 135 C 80 135, 90 135, 100 140 Z M 100 140 C 105 160, 105 200, 115 210 C 135 200, 140 160, 128 135 C 120 135, 110 135, 100 140 Z' },
-      { id: 'aductores', label: 'Aductores', d: 'M 100 140 C 98 160, 95 190, 85 200 C 90 180, 95 150, 100 140 Z M 100 140 C 102 160, 105 190, 115 200 C 110 180, 105 150, 100 140 Z' },
-      { id: 'gemelos', label: 'Gemelos', d: 'M 85 220 C 75 240, 75 270, 78 290 C 88 290, 90 250, 88 220 Z M 115 220 C 125 240, 125 270, 122 290 C 112 290, 110 250, 112 220 Z' }
+      { id: 'pecho', label: 'Pecho (Pectoral)', d: 'M 75 52 L 98 58 L 98 78 L 85 82 L 72 68 Z M 125 52 L 102 58 L 102 78 L 115 82 L 128 68 Z' },
+      { id: 'abs', label: 'Abdomen (Core)', d: 'M 88 85 L 98 85 L 98 98 L 88 95 Z M 102 85 L 112 85 L 112 95 L 102 98 Z M 88 98 L 98 100 L 98 115 L 90 120 Z M 102 100 L 112 98 L 110 120 L 102 115 Z' },
+      { id: 'hombro_anterior', label: 'Deltoides Anterior', d: 'M 72 48 L 62 55 L 58 70 L 68 72 Z M 128 48 L 138 55 L 142 70 L 132 72 Z' },
+      { id: 'hombro_lateral', label: 'Deltoides Lateral', d: 'M 62 55 L 52 65 L 55 80 L 58 70 Z M 138 55 L 148 65 L 145 80 L 142 70 Z' },
+      { id: 'biceps', label: 'Bíceps', d: 'M 58 72 L 65 75 L 62 95 L 52 90 Z M 142 72 L 135 75 L 138 95 L 148 90 Z' },
+      { id: 'antebrazo', label: 'Antebrazo', d: 'M 52 92 L 62 97 L 58 120 L 45 115 Z M 148 92 L 138 97 L 142 120 L 155 115 Z' },
+      { id: 'cuadriceps', label: 'Cuádriceps', d: 'M 78 140 L 95 140 L 92 195 L 72 190 Z M 122 140 L 105 140 L 108 195 L 128 190 Z' },
+      { id: 'gemelos', label: 'Gemelos', d: 'M 72 205 L 85 205 L 82 250 L 68 245 Z M 128 205 L 115 205 L 118 250 L 132 245 Z' }
     ],
     espalda: [
-      { id: 'espalda', label: 'Espalda (Dorsales)', d: 'M 82 40 C 100 55, 100 55, 118 40 C 130 70, 115 115, 100 120 C 85 115, 70 70, 82 40 Z' },
-      { id: 'triceps', label: 'Tríceps', d: 'M 68 65 C 55 75, 50 95, 55 110 C 62 100, 65 85, 68 65 Z M 132 65 C 145 75, 150 95, 145 110 C 138 100, 135 85, 132 65 Z' },
-      { id: 'gluteos', label: 'Glúteos', d: 'M 82 120 C 100 115, 100 115, 118 120 C 135 145, 115 165, 100 165 C 85 165, 65 145, 82 120 Z' },
-      { id: 'isquiotibiales', label: 'Isquiotibiales', d: 'M 82 165 C 95 175, 95 210, 85 225 C 68 210, 65 180, 82 165 Z M 118 165 C 105 175, 105 210, 115 225 C 132 210, 135 180, 118 165 Z' },
-      { id: 'gemelos', label: 'Gemelos', d: 'M 85 225 C 95 245, 95 270, 80 290 C 70 290, 70 245, 85 225 Z M 115 225 C 105 245, 105 270, 120 290 C 130 290, 130 245, 115 225 Z' }
+      { id: 'trapecio', label: 'Trapecio', d: 'M 100 38 L 112 50 L 100 70 L 88 50 Z' },
+      { id: 'dorsal', label: 'Dorsales', d: 'M 85 52 L 98 72 L 95 105 L 75 80 Z M 115 52 L 102 72 L 105 105 L 125 80 Z' },
+      { id: 'lumbar', label: 'Lumbares', d: 'M 95 108 L 105 108 L 110 125 L 90 125 Z' },
+      { id: 'hombro_posterior', label: 'Deltoides Posterior', d: 'M 78 48 L 65 55 L 68 75 L 82 65 Z M 122 48 L 135 55 L 132 75 L 118 65 Z' },
+      { id: 'triceps', label: 'Tríceps', d: 'M 68 78 L 55 82 L 58 105 L 70 100 Z M 132 78 L 145 82 L 142 105 L 130 100 Z' },
+      { id: 'gluteos', label: 'Glúteos', d: 'M 88 128 L 112 128 L 118 158 L 100 162 L 82 158 Z' },
+      { id: 'isquios', label: 'Isquiotibiales', d: 'M 82 165 L 98 165 L 92 205 L 75 200 Z M 118 165 L 102 165 L 108 205 L 125 200 Z' },
+      { id: 'gemelos', label: 'Gemelos', d: 'M 75 210 L 90 210 L 85 255 L 70 250 Z M 125 210 L 110 210 L 115 255 L 130 250 Z' }
     ]
   }
 };
@@ -202,153 +169,110 @@ const translateFirebaseError = (error) => {
   switch (error.code) {
     case 'auth/invalid-credential':
     case 'auth/user-not-found':
-    case 'auth/wrong-password':
-      return 'Correo o contraseña incorrectos.';
-    case 'auth/email-already-in-use':
-      return 'Este correo ya está registrado.';
-    case 'auth/invalid-email':
-      return 'El formato del correo es inválido.';
-    case 'auth/weak-password':
-      return 'La contraseña es muy débil (mínimo 6 caracteres).';
-    case 'auth/unauthorized-domain':
-      return 'Dominio no autorizado. Configura tu URL en la consola de Firebase.';
-    default:
-      return `Error: ${error.message}`;
+    case 'auth/wrong-password': return 'Correo o contraseña incorrectos.';
+    case 'auth/email-already-in-use': return 'Este correo ya está registrado.';
+    case 'auth/weak-password': return 'La contraseña es muy débil (mínimo 6 caracteres).';
+    case 'auth/requires-recent-login': return 'Por seguridad, debes cerrar sesión y volver a entrar para realizar este cambio.';
+    default: return `Error: ${error.message}`;
   }
 };
 
 // ==============================================================================
-// COMPONENTES EXTRAÍDOS
+// PANTALLA DE LOGIN Y REGISTRO
 // ==============================================================================
-
-const LoginScreen = ({ t }) => {
-  const [mode, setMode] = useState('login'); // 'login', 'register', 'forgot'
-  const [form, setForm] = useState({ username: '', email: '', password: '', gender: 'masculino' });
+const LoginScreen = ({ t, theme, toggleTheme }) => {
+  const [mode, setMode] = useState('login'); 
+  const [form, setForm] = useState({ username: '', email: '', password: '', anatomy: 'masculino' });
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
-  const [loadingMessage, setLoadingMessage] = useState('');
 
-  const handleSwitchMode = (targetMode) => {
-    playClickSound();
-    setError(''); setSuccessMsg(''); setMode(targetMode);
-  };
+  const handleSwitchMode = (targetMode) => { playClickSound(); setError(''); setSuccessMsg(''); setMode(targetMode); };
 
-  const handleRegister = async (e) => {
-    e.preventDefault();
-    playClickSound(); setError('');
-    if (!/^[a-zA-Z]+$/.test(form.username)) return setError("El usuario solo debe contener letras.");
-    if (form.password.length < 6) return setError("Mínimo 6 caracteres en contraseña.");
-
-    setLoadingMessage("Creando perfil...");
-    setLoading(true);
+  const handleAuthAction = async (e, actionType) => {
+    e.preventDefault(); playClickSound(); setError(''); setSuccessMsg(''); setLoading(true);
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, form.email, form.password);
-      await updateProfile(userCredential.user, { displayName: form.username });
-      await setDoc(doc(db, 'users', userCredential.user.uid), {
-        username: form.username, email: form.email, gender: form.gender, activeRoutineId: null
-      });
-    } catch (err) { setError(translateFirebaseError(err)); }
-    setLoading(false);
-  };
-
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    playClickSound(); setError(''); setLoadingMessage("Autenticando..."); setLoading(true);
-    try {
-      await signInWithEmailAndPassword(auth, form.email, form.password);
-    } catch (err) { setError(translateFirebaseError(err)); }
-    setLoading(false);
-  };
-
-  const handleForgot = async (e) => {
-    e.preventDefault();
-    playClickSound(); setError('');
-    if (!form.email) return setError("Ingresa tu correo.");
-    setLoadingMessage("Enviando enlace..."); setLoading(true);
-    try {
-      await sendPasswordResetEmail(auth, form.email);
-      setSuccessMsg("¡Enlace enviado a tu correo! Revisa tu bandeja de entrada o spam.");
-      setForm({ ...form, password: '' });
-    } catch (err) { setError(translateFirebaseError(err)); }
-    setLoading(false);
-  };
-
-  const handleGoogleLogin = async () => {
-    playClickSound(); setError(''); setLoadingMessage("Conectando..."); setLoading(true);
-    try {
-      const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      const userDoc = await getDoc(doc(db, 'users', result.user.uid));
-      if (!userDoc.exists()) {
-        await setDoc(doc(db, 'users', result.user.uid), {
-          username: result.user.displayName || result.user.email.split('@')[0],
-          email: result.user.email, gender: 'masculino', activeRoutineId: null
-        });
+      if (actionType === 'register') {
+        if (!/^[a-zA-Z0-9_]+$/.test(form.username)) throw new Error("El usuario solo debe contener letras o números.");
+        const cred = await createUserWithEmailAndPassword(auth, form.email, form.password);
+        await updateProfile(cred.user, { displayName: form.username });
+        await setDoc(doc(db, 'users', cred.user.uid), { username: form.username, email: form.email, anatomy: form.anatomy, activeRoutineId: null, groups: [] });
+      } else if (actionType === 'login') {
+        await signInWithEmailAndPassword(auth, form.email, form.password);
+      } else if (actionType === 'forgot') {
+        await sendPasswordResetEmail(auth, form.email);
+        setSuccessMsg("Enlace enviado a tu correo. Revisa tu bandeja de entrada o spam.");
       }
-    } catch (err) {
-      if (err.code !== 'auth/popup-closed-by-user') setError(translateFirebaseError(err));
+    } catch (err) { 
+      setError(err.message === "El usuario solo debe contener letras o números." ? err.message : translateFirebaseError(err)); 
     }
     setLoading(false);
   };
 
-  if (loading) return (
-    <div className={`min-h-screen flex flex-col justify-center items-center ${t.bg} ${t.text}`}>
-      <div className={`animate-spin rounded-full h-12 w-12 border-b-2 mb-4 ${t.accentBorder}`}></div>
-      <p className={`font-bold animate-pulse text-sm ${t.textMuted}`}>{loadingMessage}</p>
-    </div>
-  );
+  const handleGoogleLogin = async () => {
+    playClickSound(); setError(''); setLoading(true);
+    try {
+      const result = await signInWithPopup(auth, new GoogleAuthProvider());
+      const userDoc = await getDoc(doc(db, 'users', result.user.uid));
+      if (!userDoc.exists()) {
+        await setDoc(doc(db, 'users', result.user.uid), { username: result.user.displayName || result.user.email.split('@')[0], email: result.user.email, anatomy: 'masculino', activeRoutineId: null, groups: [] });
+      }
+    } catch (err) { if (err.code !== 'auth/popup-closed-by-user') setError(translateFirebaseError(err)); }
+    setLoading(false);
+  };
 
   return (
-    <div className={`min-h-screen flex flex-col items-center justify-center p-4 overflow-y-auto ${t.bg} ${t.text}`}>
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className={`w-full max-w-md p-6 md:p-8 my-auto rounded-3xl border shadow-xl ${t.card}`}>
-        <div className="flex justify-center mb-3"><Dumbbell className={t.accentText} size={40} /></div>
-        <h2 className={`text-xl md:text-2xl font-black text-center mb-1 ${t.text}`}>COLOSSUS</h2>
-        <p className={`text-center text-xs mb-6 ${t.textMuted}`}>Registra tus rutinas y compara marcas</p>
+    <div className={`min-h-screen flex flex-col items-center justify-center p-4 relative ${t.bg} ${t.text}`}>
+      <div className="absolute top-4 right-4">
+        <button onClick={() => { playClickSound(); toggleTheme(); }} className={`p-2 rounded-full transition-transform active:scale-90 ${t.btn}`}>
+          {theme === 'dark' ? <Sun size={20} className="text-amber-400" /> : <Moon size={20} className="text-blue-500" />}
+        </button>
+      </div>
 
-        {error && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 text-red-500 rounded-xl text-xs md:text-sm text-center font-bold">{error}</div>}
-        {successMsg && <div className="mb-4 p-3 bg-green-500/10 border border-green-500/50 text-green-500 rounded-xl text-xs md:text-sm text-center font-bold">{successMsg}</div>}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className={`w-full max-w-md p-8 rounded-2xl border shadow-2xl ${t.card}`}>
+        <div className="flex justify-center mb-4"><Dumbbell className={t.accentText} size={48} /></div>
+        <h2 className="text-3xl font-black text-center mb-1 tracking-tight">COLOSSUS</h2>
+        <p className={`text-center text-xs mb-8 ${t.textMuted}`}>Registra tus rutinas y rompe tus límites</p>
+
+        {error && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 text-red-500 rounded-lg text-sm text-center font-bold">{error}</div>}
+        {successMsg && <div className="mb-4 p-3 bg-green-500/10 border border-green-500/50 text-green-500 rounded-lg text-sm text-center font-bold">{successMsg}</div>}
 
         {mode === 'login' && (
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Correo</label><input type="email" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} className={`w-full p-3 text-sm rounded-xl border outline-none ${t.input}`} /></div>
-            <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Contraseña</label><input type="password" required value={form.password} onChange={e => setForm({...form, password: e.target.value})} className={`w-full p-3 text-sm rounded-xl border outline-none ${t.input}`} /></div>
+          <form onSubmit={(e) => handleAuthAction(e, 'login')} className="space-y-4">
+            <div><label className={`block text-xs font-bold mb-1.5 ${t.textMuted}`}>Correo Electrónico</label><input type="email" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} className={`w-full p-3 text-sm rounded-lg border outline-none transition-colors ${t.input}`} /></div>
+            <div><label className={`block text-xs font-bold mb-1.5 ${t.textMuted}`}>Contraseña</label><input type="password" required value={form.password} onChange={e => setForm({...form, password: e.target.value})} className={`w-full p-3 text-sm rounded-lg border outline-none transition-colors ${t.input}`} /></div>
             <div className="text-right"><button type="button" onClick={() => handleSwitchMode('forgot')} className={`text-xs font-bold ${t.accentText} hover:underline`}>¿Olvidaste tu contraseña?</button></div>
-            <button type="submit" className={`w-full p-3 mt-2 rounded-xl font-bold text-white transition-all active:scale-95 shadow-md ${t.accentBg}`}>Ingresar</button>
-            <div className="relative flex py-3 items-center">
-              <div className="flex-grow border-t border-slate-500/20"></div>
-              <span className={`flex-shrink-0 mx-4 text-xs font-bold ${t.textMuted}`}>O continuar con</span>
-              <div className="flex-grow border-t border-slate-500/20"></div>
-            </div>
-            <button type="button" onClick={handleGoogleLogin} className={`w-full p-3 rounded-xl font-bold flex items-center justify-center gap-2 border transition-all active:scale-95 shadow-sm text-sm ${t.card}`}>
-              <svg viewBox="0 0 24 24" width="18" height="18" xmlns="http://www.w3.org/2000/svg"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+            <button type="submit" disabled={loading} className={`w-full p-3 rounded-lg font-bold text-white transition-all active:scale-95 shadow-md flex justify-center ${t.accentBg}`}>{loading ? <span className="animate-pulse">Cargando...</span> : 'Ingresar'}</button>
+            <div className="relative flex py-4 items-center"><div className={`flex-grow border-t ${t.borderMuted}`}></div><span className={`flex-shrink-0 mx-4 text-xs font-bold ${t.textMuted}`}>o continuar con</span><div className={`flex-grow border-t ${t.borderMuted}`}></div></div>
+            <button type="button" onClick={handleGoogleLogin} className={`w-full p-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm text-sm ${t.btn}`}>
+              <svg viewBox="0 0 24 24" width="18" height="18"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
               Google
             </button>
-            <div className="mt-6 text-center border-t pt-4 border-slate-500/20"><button type="button" onClick={() => handleSwitchMode('register')} className={`text-sm font-bold ${t.accentText} hover:underline`}>¿Nuevo aquí? Crea tu perfil</button></div>
+            <div className={`mt-6 text-center border-t pt-4 ${t.borderMuted}`}><button type="button" onClick={() => handleSwitchMode('register')} className={`text-sm font-bold ${t.accentText} hover:underline`}>¿Nuevo aquí? Crea tu perfil</button></div>
           </form>
         )}
 
         {mode === 'register' && (
-          <form onSubmit={handleRegister} className="space-y-3">
-            <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Usuario (Solo letras)</label><input type="text" required value={form.username} onChange={e => setForm({...form, username: e.target.value})} className={`w-full p-3 text-sm rounded-xl border outline-none ${t.input}`} /></div>
-            <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Correo</label><input type="email" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} className={`w-full p-3 text-sm rounded-xl border outline-none ${t.input}`} /></div>
-            <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Contraseña</label><input type="password" required value={form.password} onChange={e => setForm({...form, password: e.target.value})} className={`w-full p-3 text-sm rounded-xl border outline-none ${t.input}`} /></div>
-            <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Sexo</label>
-              <select value={form.gender} onChange={e => setForm({...form, gender: e.target.value})} className={`w-full p-3 text-sm rounded-xl border outline-none ${t.input}`}>
-                <option value="masculino">Masculino</option><option value="femenino">Femenino</option>
+          <form onSubmit={(e) => handleAuthAction(e, 'register')} className="space-y-4">
+            <div><label className={`block text-xs font-bold mb-1.5 ${t.textMuted}`}>Nombre de Usuario</label><input type="text" required value={form.username} onChange={e => setForm({...form, username: e.target.value})} className={`w-full p-3 text-sm rounded-lg border outline-none ${t.input}`} /></div>
+            <div><label className={`block text-xs font-bold mb-1.5 ${t.textMuted}`}>Correo Electrónico</label><input type="email" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} className={`w-full p-3 text-sm rounded-lg border outline-none ${t.input}`} /></div>
+            <div><label className={`block text-xs font-bold mb-1.5 ${t.textMuted}`}>Contraseña (Min. 6 char)</label><input type="password" required value={form.password} onChange={e => setForm({...form, password: e.target.value})} className={`w-full p-3 text-sm rounded-lg border outline-none ${t.input}`} /></div>
+            <div><label className={`block text-xs font-bold mb-1.5 ${t.textMuted}`}>Fisionomía Anatómica Base</label>
+              <select value={form.anatomy} onChange={e => setForm({...form, anatomy: e.target.value})} className={`w-full p-3 text-sm rounded-lg border outline-none ${t.input}`}>
+                <option value="masculino">Físico Masculino</option><option value="femenino">Físico Femenino</option>
               </select>
             </div>
-            <button type="submit" className={`w-full p-3 mt-4 rounded-xl font-bold text-white transition-all active:scale-95 shadow-md ${t.accentBg}`}>Crear Perfil</button>
-            <div className="text-center mt-4"><button type="button" onClick={() => handleSwitchMode('login')} className={`text-xs font-bold ${t.textMuted} hover:underline flex items-center justify-center gap-1 mx-auto`}><ArrowLeft size={14}/> Volver</button></div>
+            <button type="submit" disabled={loading} className={`w-full p-3 mt-2 rounded-lg font-bold text-white transition-all active:scale-95 shadow-md flex justify-center ${t.accentBg}`}>{loading ? 'Creando...' : 'Crear Perfil'}</button>
+            <div className="text-center mt-4"><button type="button" onClick={() => handleSwitchMode('login')} className={`text-xs font-bold ${t.textMuted} hover:underline`}>Volver</button></div>
           </form>
         )}
 
         {mode === 'forgot' && (
-          <form onSubmit={handleForgot} className="space-y-4">
-            <p className={`text-xs md:text-sm ${t.textMuted} text-center`}>Recibirás un enlace oficial para restablecer tu contraseña.</p>
-            <div><label className={`block text-xs font-bold mb-1 ${t.textMuted}`}>Correo</label><input type="email" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} className={`w-full p-3 text-sm rounded-xl border outline-none ${t.input}`} /></div>
-            <button type="submit" className={`w-full p-3 rounded-xl font-bold text-white transition-all active:scale-95 ${t.accentBg}`}>Enviar enlace</button>
-            <div className="text-center mt-4"><button type="button" onClick={() => handleSwitchMode('login')} className={`text-xs font-bold ${t.textMuted} hover:underline flex items-center justify-center gap-1 mx-auto`}><ArrowLeft size={14}/> Volver</button></div>
+          <form onSubmit={(e) => handleAuthAction(e, 'forgot')} className="space-y-4">
+            <p className={`text-sm ${t.textMuted} text-center mb-4`}>Te enviaremos un enlace oficial de Firebase para restablecer tu acceso.</p>
+            <div><label className={`block text-xs font-bold mb-1.5 ${t.textMuted}`}>Correo Electrónico</label><input type="email" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} className={`w-full p-3 text-sm rounded-lg border outline-none ${t.input}`} /></div>
+            <button type="submit" disabled={loading} className={`w-full p-3 rounded-lg font-bold text-white transition-all active:scale-95 flex justify-center ${t.accentBg}`}>{loading ? 'Enviando...' : 'Enviar enlace'}</button>
+            <div className="text-center mt-4"><button type="button" onClick={() => handleSwitchMode('login')} className={`text-xs font-bold ${t.textMuted} hover:underline`}>Volver al inicio</button></div>
           </form>
         )}
       </motion.div>
@@ -356,11 +280,13 @@ const LoginScreen = ({ t }) => {
   );
 };
 
+// ==============================================================================
+// PESTAÑAS (TABS) DE LA APLICACIÓN
+// ==============================================================================
 
-const InicioTab = ({ currentUser, routines, prs, t, theme, onTriggerAnimation }) => {
+const InicioTab = ({ currentUser, routines, prs, t }) => {
   const [completingIdx, setCompletingIdx] = useState(null);
   const [kgInput, setKgInput] = useState('');
-
   const todayNum = new Date().getDay();
   const mappedDay = todayNum === 0 ? 'domingo' : DAYS[todayNum - 1];
   const activeRoutine = routines.find(r => r.id === currentUser?.activeRoutineId);
@@ -370,65 +296,47 @@ const InicioTab = ({ currentUser, routines, prs, t, theme, onTriggerAnimation })
   const checkAndSubmitExercise = async (ejercicio) => {
     playClickSound();
     const pesoNum = kgInput ? parseFloat(kgInput) : null;
-    let isNewPr = false;
-
-    if (pesoNum) {
-      const prevPrs = prs.filter(p => p.nombre === currentUser.username && p.ejercicio === ejercicio && p.peso !== null);
-      const maxPrev = prevPrs.length > 0 ? Math.max(...prevPrs.map(p => p.peso)) : 0;
-      if (pesoNum > maxPrev) isNewPr = true;
-    }
-
-    await addDoc(collection(db, 'prs'), {
-      nombre: currentUser.username, ejercicio: ejercicio, peso: pesoNum, fecha: new Date().toISOString()
-    });
-
-    playSuccessSound(isNewPr);
-    onTriggerAnimation(isNewPr ? 'pr' : 'random');
-    setCompletingIdx(null);
-    setKgInput('');
+    await addDoc(collection(db, 'prs'), { nombre: currentUser.username, ejercicio, peso: pesoNum, fecha: new Date().toISOString() });
+    setCompletingIdx(null); setKgInput('');
   };
 
   if (!activeRoutine) return (
-    <div className={`p-6 text-center rounded-2xl border ${t.card} ${t.textMuted}`}>
-      <h3 className="text-lg md:text-xl font-bold mb-2">Sin rutina activa</h3>
-      <p className="text-sm">Ve a la pestaña Rutinas para seleccionar o crear una.</p>
+    <div className={`p-8 text-center rounded-xl border ${t.card} ${t.textMuted}`}>
+      <h3 className="text-lg font-bold mb-2">Sin rutina activa</h3><p className="text-sm">Ve a la pestaña Rutinas para empezar.</p>
     </div>
   );
 
   const todayExercises = activeRoutine.exercises[mappedDay] || [];
 
   return (
-    <div className="space-y-4 md:space-y-6">
-      <div className={`p-4 md:p-6 rounded-2xl border ${t.card}`}>
-        <h2 className="text-xl md:text-2xl font-bold mb-1">¡A entrenar, {currentUser.username}!</h2>
-        <p className={`capitalize text-xs md:text-sm ${t.textMuted}`}>Hoy es {mappedDay} • {activeRoutine.name}</p>
+    <div className="space-y-6">
+      <div className={`p-6 rounded-xl border ${t.card}`}>
+        <h2 className="text-2xl font-bold tracking-tight">¡A entrenar, {currentUser.username}!</h2>
+        <p className={`capitalize text-sm mt-1 ${t.textMuted}`}>Hoy es {mappedDay} • {activeRoutine.name}</p>
       </div>
 
       {todayExercises.length === 0 ? (
-        <div className={`p-6 md:p-8 text-center rounded-2xl border ${t.card} ${t.textMuted}`}>Día de descanso programado. ¡Disfruta!</div>
+        <div className={`p-8 text-center rounded-xl border ${t.card} ${t.textMuted}`}>Día de descanso programado.</div>
       ) : (
-        <div className="grid gap-3 md:gap-4">
+        <div className="grid gap-3">
           {todayExercises.map((ex, idx) => {
             const isDone = userTodayPrs.some(pr => pr.ejercicio === ex.ejercicio);
             return (
-              <motion.div key={idx} initial={{opacity:0, x:-10}} animate={{opacity:1, x:0}} transition={{delay: idx*0.05}} className={`p-4 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-3 ${t.card} ${isDone ? 'opacity-50' : ''}`}>
+              <motion.div key={idx} initial={{opacity:0, x:-10}} animate={{opacity:1, x:0}} className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${t.card} ${isDone ? 'opacity-60 grayscale' : ''}`}>
                 <div>
-                  <h3 className="font-bold text-base md:text-lg">{ex.ejercicio}</h3>
-                  <p className={`text-xs md:text-sm ${t.textMuted}`}>{ex.series} series {ex.reps && `x ${ex.reps} reps`}</p>
+                  <h3 className="font-bold text-lg">{ex.ejercicio}</h3>
+                  <p className={`text-sm font-medium ${t.textMuted}`}>{ex.series} series {ex.reps && `x ${ex.reps} reps`}</p>
                 </div>
-                
                 {isDone ? (
-                  <div className="flex items-center gap-1.5 text-green-500 text-sm font-bold bg-green-500/10 px-3 py-1.5 rounded-lg self-start md:self-auto"><Check size={18}/> Hecho</div>
+                  <div className="flex items-center gap-1.5 text-green-500 text-sm font-bold bg-green-500/10 px-3 py-1.5 rounded-lg w-max"><Check size={16}/> Hecho</div>
                 ) : completingIdx === idx ? (
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
-                    <input type="number" step="0.5" placeholder="Kg (Opcional)" value={kgInput} onChange={e => setKgInput(e.target.value)} className={`p-2 text-sm rounded-lg border w-full sm:w-32 ${t.input}`} />
-                    <div className="flex gap-2">
-                      <button onClick={() => checkAndSubmitExercise(ex.ejercicio)} className={`flex-1 px-3 py-2 rounded-lg text-sm font-bold text-white transition-all active:scale-95 ${t.accentBg}`}>Guardar</button>
-                      <button onClick={() => { playClickSound(); setCompletingIdx(null); }} className={`px-2.5 py-2 rounded-lg border transition-all active:scale-95 ${theme === 'dark' ? 'border-slate-600 bg-slate-800' : 'border-slate-300 bg-slate-100'}`}><X size={18}/></button>
-                    </div>
+                  <div className="flex gap-2">
+                    <input type="number" min="0" step="0.5" placeholder="Kg..." value={kgInput} onChange={e => setKgInput(e.target.value)} className={`w-24 p-2 text-sm rounded-lg border ${t.input}`} />
+                    <button onClick={() => checkAndSubmitExercise(ex.ejercicio)} className={`px-4 py-2 rounded-lg text-sm font-bold text-white transition-all active:scale-95 ${t.accentBg}`}>Guardar</button>
+                    <button onClick={() => { playClickSound(); setCompletingIdx(null); }} className={`px-3 py-2 rounded-lg transition-all active:scale-95 ${t.btn}`}><X size={16}/></button>
                   </div>
                 ) : (
-                  <button onClick={() => { playClickSound(); setCompletingIdx(idx); }} className={`px-4 py-2 text-sm rounded-lg font-bold border transition-all active:scale-95 self-start md:self-auto ${t.accentBorder} ${t.accentText} ${t.accentLightBg}`}>Completar</button>
+                  <button onClick={() => { playClickSound(); setCompletingIdx(idx); }} className={`px-4 py-2 text-sm rounded-lg font-bold border transition-all active:scale-95 self-start sm:self-auto ${t.btn}`}>Completar</button>
                 )}
               </motion.div>
             );
@@ -439,51 +347,25 @@ const InicioTab = ({ currentUser, routines, prs, t, theme, onTriggerAnimation })
   );
 };
 
-
-const RutinasTab = ({ currentUser, routines, ejerciciosLista, setEjerciciosLista, setCurrentUser, t, theme, setLoading, setLoadingMessage }) => {
+const RutinasTab = ({ currentUser, routines, ejerciciosLista, setEjerciciosLista, setCurrentUser, t }) => {
   const [editingRoutine, setEditingRoutine] = useState(null);
   const myRoutines = routines.filter(r => r.authorId === currentUser?.id);
 
-  const openCreate = () => {
-    playClickSound();
-    setEditingRoutine({ name: '', exercises: DAYS.reduce((acc, d) => ({ ...acc, [d]: [] }), {}) });
-  };
+  const openCreate = () => { playClickSound(); setEditingRoutine({ name: '', exercises: DAYS.reduce((acc, d) => ({ ...acc, [d]: [] }), {}) }); };
   
   const saveRoutine = async () => {
     playClickSound();
-    if (!editingRoutine.name.trim()) return alert("El nombre es requerido");
-    setLoadingMessage("Guardando rutina...");
-    setLoading(true);
-    try {
-      const payload = { ...editingRoutine, authorId: currentUser.id, authorName: currentUser.username };
-      if (editingRoutine.id) await updateDoc(doc(db, 'routines', editingRoutine.id), payload);
-      else await addDoc(collection(db, 'routines'), payload);
-      setEditingRoutine(null);
-    } catch(e){}
-    setLoading(false);
+    if (!editingRoutine.name.trim()) return; // Validador silencioso
+    const payload = { ...editingRoutine, authorId: currentUser.id, authorName: currentUser.username };
+    if (editingRoutine.id) await updateDoc(doc(db, 'routines', editingRoutine.id), payload);
+    else await addDoc(collection(db, 'routines'), payload);
+    setEditingRoutine(null);
   };
 
   const deleteRoutine = async (id) => {
     playClickSound();
-    if (window.confirm("¿Eliminar esta rutina para siempre?")) {
-      try {
-        await deleteDoc(doc(db, 'routines', id));
-        if (currentUser.activeRoutineId === id) {
-          await setActive(null);
-        }
-      } catch (err) { console.error("Error borrando:", err); }
-    }
-  };
-
-  const copyRoutine = async (rutina) => {
-    playClickSound();
-    setLoadingMessage("Duplicando rutina...");
-    setLoading(true);
-    try {
-      const { id, ...dataCopy } = rutina;
-      await addDoc(collection(db, 'routines'), { ...dataCopy, name: `${rutina.name} (Copia)` });
-    } catch (e) {}
-    setLoading(false);
+    await deleteDoc(doc(db, 'routines', id));
+    if (currentUser.activeRoutineId === id) await setActive(null);
   };
 
   const setActive = async (id) => {
@@ -492,75 +374,74 @@ const RutinasTab = ({ currentUser, routines, ejerciciosLista, setEjerciciosLista
     setCurrentUser(prev => ({ ...prev, activeRoutineId: id }));
   };
 
+  // Deep copy de ejercicios para evitar mutación directa del estado
+  const updateExercise = (day, idx, field, value) => {
+    const newDays = { ...editingRoutine.exercises };
+    const newExList = [...newDays[day]];
+    newExList[idx] = { ...newExList[idx], [field]: value };
+    newDays[day] = newExList;
+    setEditingRoutine({ ...editingRoutine, exercises: newDays });
+  };
+  const addExercise = (day) => { playClickSound(); updateExercise(day, editingRoutine.exercises[day].length, 'ejercicio', ''); };
+  const removeExercise = (day, idx) => {
+    playClickSound();
+    const newDays = { ...editingRoutine.exercises };
+    newDays[day] = newDays[day].filter((_, i) => i !== idx);
+    setEditingRoutine({ ...editingRoutine, exercises: newDays });
+  };
+
   if (editingRoutine) return (
-    <div className={`p-4 md:p-6 rounded-2xl border ${t.card}`}>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg md:text-xl font-bold">{editingRoutine.id ? 'Editar Rutina' : 'Nueva Rutina'}</h2>
-        <button onClick={() => { playClickSound(); setEditingRoutine(null); }} className={`p-2 rounded-full hover:bg-black/10 transition-colors ${t.textMuted}`}><X size={20}/></button>
+    <div className={`p-4 md:p-6 rounded-xl border shadow-sm ${t.card}`}>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-xl font-bold tracking-tight">{editingRoutine.id ? 'Editar Rutina' : 'Nueva Rutina'}</h2>
+        <button onClick={() => { playClickSound(); setEditingRoutine(null); }} className={`p-2 rounded-lg transition-colors ${t.btn}`}><X size={18}/></button>
       </div>
-      <input type="text" placeholder="Nombre de la rutina" value={editingRoutine.name} onChange={e => setEditingRoutine({...editingRoutine, name: e.target.value})} className={`w-full p-3 mb-4 rounded-xl border text-base font-bold ${t.input}`} />
-      <div className="space-y-4">
+      <input type="text" placeholder="Nombre de la rutina..." value={editingRoutine.name} onChange={e => setEditingRoutine({...editingRoutine, name: e.target.value})} className={`w-full p-3 mb-6 rounded-lg border text-lg font-bold outline-none ${t.input}`} />
+      
+      {/* GRID RESPONSIVO: Columnas en Ordenador, Filas en Móvil */}
+      <div className="grid grid-cols-1 lg:grid-cols-7 gap-4 lg:gap-3">
         {DAYS.map(day => (
-          <div key={day} className={`p-3 md:p-4 rounded-xl border ${theme === 'dark' ? 'bg-black/20 border-slate-700/50' : 'bg-slate-50 border-slate-200'}`}>
-            <h3 className="font-bold capitalize mb-2 text-sm md:text-base">{day}</h3>
-            {editingRoutine.exercises[day].map((ex, idx) => (
-              <div key={idx} className="flex flex-col sm:flex-row gap-2 mb-2">
-                <input type="text" list="lista-ejercicios-rutina" placeholder="Ejercicio" value={ex.ejercicio} 
-                  onChange={e => {
-                    const newEx = [...editingRoutine.exercises[day]]; newEx[idx].ejercicio = e.target.value.toUpperCase();
-                    setEditingRoutine({...editingRoutine, exercises: {...editingRoutine.exercises, [day]: newEx}});
-                  }} 
-                  onBlur={(e) => {
-                    const val = e.target.value.trim().toUpperCase();
-                    if (val && !ejerciciosLista.includes(val)) setEjerciciosLista(prev => [...prev, val]);
-                  }}
-                  className={`flex-1 p-2 text-sm rounded-lg border ${t.input}`} />
-                <div className="flex gap-2">
-                  <input type="number" placeholder="Series" value={ex.series} 
-                    onChange={e => {
-                      const newEx = [...editingRoutine.exercises[day]]; newEx[idx].series = e.target.value;
-                      setEditingRoutine({...editingRoutine, exercises: {...editingRoutine.exercises, [day]: newEx}});
-                    }} className={`w-20 p-2 text-sm rounded-lg border ${t.input}`} />
-                  <input type="text" placeholder="Reps" value={ex.reps} 
-                    onChange={e => {
-                      const newEx = [...editingRoutine.exercises[day]]; newEx[idx].reps = e.target.value;
-                      setEditingRoutine({...editingRoutine, exercises: {...editingRoutine.exercises, [day]: newEx}});
-                    }} className={`w-24 p-2 text-sm rounded-lg border ${t.input}`} />
-                  <button onClick={() => { playClickSound(); const newEx = editingRoutine.exercises[day].filter((_, i) => i !== idx); setEditingRoutine({...editingRoutine, exercises: {...editingRoutine.exercises, [day]: newEx}}); }} className="p-2 text-red-500 bg-red-500/10 rounded-lg hover:bg-red-500/20 transition-colors"><Trash2 size={18}/></button>
+          <div key={day} className={`p-3 md:p-4 rounded-lg border ${t.borderMuted} bg-black/5`}>
+            <h3 className="font-bold capitalize mb-3 text-sm text-center border-b pb-2 border-slate-500/20">{day}</h3>
+            <div className="space-y-3">
+              {editingRoutine.exercises[day].map((ex, idx) => (
+                <div key={idx} className="flex flex-col gap-2 relative group p-2 bg-black/10 rounded-lg">
+                  <input type="text" list="lista-ejercicios-rutina" placeholder="Ejercicio" value={ex.ejercicio} 
+                    onChange={e => updateExercise(day, idx, 'ejercicio', e.target.value.toUpperCase())}
+                    className={`w-full p-1.5 text-xs font-bold rounded border outline-none ${t.input}`} />
+                  <div className="flex gap-2">
+                    <input type="number" min="1" step="1" placeholder="Ser." value={ex.series} onChange={e => updateExercise(day, idx, 'series', e.target.value)} className={`w-1/2 p-1.5 text-xs rounded border outline-none ${t.input}`} />
+                    <input type="number" min="1" step="1" placeholder="Rep." value={ex.reps} onChange={e => updateExercise(day, idx, 'reps', e.target.value)} className={`w-1/2 p-1.5 text-xs rounded border outline-none ${t.input}`} />
+                  </div>
+                  <button onClick={() => removeExercise(day, idx)} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"><Trash2 size={12}/></button>
                 </div>
-              </div>
-            ))}
-            <button onClick={() => { playClickSound(); const newEx = [...editingRoutine.exercises[day], { ejercicio: '', series: '', reps: '' }]; setEditingRoutine({...editingRoutine, exercises: {...editingRoutine.exercises, [day]: newEx}}); }} className={`mt-2 text-xs font-bold px-3 py-1.5 rounded-lg border transition-all active:scale-95 ${t.accentBorder} ${t.accentText} hover:bg-opacity-10`}>+ Ejercicio</button>
+              ))}
+              <button onClick={() => addExercise(day)} className={`w-full text-xs font-bold py-2 rounded-lg border transition-all active:scale-95 ${t.btn}`}>+ Añadir</button>
+            </div>
           </div>
         ))}
       </div>
-      <button onClick={saveRoutine} className={`w-full mt-4 p-3 md:p-4 rounded-xl font-bold text-white text-base transition-all active:scale-95 ${t.accentBg}`}>Guardar Rutina</button>
+      <button onClick={saveRoutine} className={`w-full mt-6 p-3 rounded-lg font-bold text-white text-base transition-all active:scale-95 shadow-md ${t.accentBg}`}>Guardar Rutina</button>
       <datalist id="lista-ejercicios-rutina">{ejerciciosLista.map(e => <option key={e} value={e}/>)}</datalist>
     </div>
   );
 
   return (
-    <div className="space-y-4">
-      <button onClick={openCreate} className={`w-full p-4 rounded-2xl border border-dashed flex justify-center items-center gap-2 text-sm md:text-base font-bold transition-all active:scale-95 ${theme === 'dark' ? 'border-slate-600 hover:bg-white/5' : 'border-slate-300 hover:bg-black/5'}`}><Plus size={18}/> Crear Nueva Rutina</button>
-      {myRoutines.length === 0 ? <p className={`text-center p-6 text-sm ${t.textMuted}`}>No tienes rutinas. Crea la primera.</p> : (
-        <div className="grid md:grid-cols-2 gap-3 md:gap-4">
+    <div className="space-y-6">
+      <button onClick={openCreate} className={`w-full p-4 rounded-xl border border-dashed flex justify-center items-center gap-2 font-bold transition-all active:scale-95 ${t.btn} ${t.borderMuted}`}><Plus size={18}/> Crear Nueva Rutina</button>
+      {myRoutines.length === 0 ? <p className={`text-center p-6 text-sm ${t.textMuted}`}>No hay rutinas creadas.</p> : (
+        <div className="grid sm:grid-cols-2 gap-4">
           {myRoutines.map(r => {
             const isActive = currentUser?.activeRoutineId === r.id;
             return (
-              <div key={r.id} className={`p-4 md:p-5 rounded-2xl border relative overflow-hidden transition-all ${t.card} ${isActive ? `ring-2 ring-opacity-100 ring-[#e53935]` : ''}`}>
-                {isActive && <div className={`absolute top-0 right-0 px-2.5 py-1 text-[9px] font-bold text-white rounded-bl-lg ${t.accentBg}`}>ACTIVA</div>}
-                <h3 className="text-base md:text-xl font-bold mb-1 pr-16">{r.name}</h3>
-                <p className={`text-[10px] md:text-xs mb-3 ${t.textMuted}`}>Por {r.authorName}</p>
-                <div className="flex flex-wrap gap-1.5 md:gap-2 items-center">
-                  <button onClick={() => { playClickSound(); setEditingRoutine(r); }} className={`p-2 rounded-lg bg-black/5 hover:bg-black/10 transition-colors`}><Edit2 size={14}/></button>
-                  <button onClick={() => copyRoutine(r)} className={`p-2 rounded-lg bg-black/5 hover:bg-black/10 transition-colors`}><Copy size={14}/></button>
-                  <button onClick={() => { 
-                    playClickSound(); 
-                    const url = `${window.location.origin}?shareRoutine=${r.id}`;
-                    navigator.clipboard.writeText(url).then(() => alert("¡Link de rutina copiado!\nCompártelo con tus amigos para que la importen.")); 
-                  }} className={`p-2 rounded-lg bg-black/5 hover:bg-black/10 transition-colors`}><Share2 size={14}/></button>
-                  <button onClick={() => deleteRoutine(r.id)} className={`p-2 rounded-lg text-red-500 bg-red-500/10 hover:bg-red-500/20 transition-colors`}><Trash2 size={14}/></button>
-                  {!isActive && <button onClick={() => setActive(r.id)} className={`ml-auto px-3 py-1.5 text-[11px] md:text-xs font-bold rounded-lg border transition-all active:scale-95 ${t.accentText} ${t.accentBorder}`}>Activar</button>}
+              <div key={r.id} className={`p-5 rounded-xl border relative transition-all ${t.card} ${isActive ? `ring-1 ring-offset-2 ${t.ringAccent}` : ''}`}>
+                {isActive && <div className={`absolute top-0 right-0 px-2.5 py-1 text-[10px] font-bold text-white rounded-bl-lg ${t.accentBg}`}>ACTIVA</div>}
+                <h3 className="text-lg font-bold tracking-tight mb-1 pr-14">{r.name}</h3>
+                <p className={`text-xs mb-4 ${t.textMuted}`}>Por {r.authorName}</p>
+                <div className="flex gap-2 items-center">
+                  <button onClick={() => { playClickSound(); setEditingRoutine(r); }} className={`p-2 rounded-lg transition-colors ${t.btn}`}><Edit2 size={14}/></button>
+                  <button onClick={() => deleteRoutine(r.id)} className="p-2 rounded-lg text-red-500 bg-red-500/10 hover:bg-red-500/20 transition-colors"><Trash2 size={14}/></button>
+                  {!isActive && <button onClick={() => setActive(r.id)} className={`ml-auto px-4 py-1.5 text-xs font-bold rounded-lg border transition-all active:scale-95 ${t.btn}`}>Activar</button>}
                 </div>
               </div>
             );
@@ -571,410 +452,189 @@ const RutinasTab = ({ currentUser, routines, ejerciciosLista, setEjerciciosLista
   );
 };
 
+const AnalyticsTab = ({ prs, currentUser, usersDb, t, theme }) => {
+  const allUsers = Array.from(new Set(prs.map(p => p.nombre))).sort();
+  const [selectedUsers, setSelectedUsers] = useState([currentUser.username]); 
+  
+  const toggleUser = (u) => { playClickSound(); setSelectedUsers(prev => prev.includes(u) ? prev.filter(x => x !== u) : [...prev, u]); };
 
-const RankingTab = ({ prs, t, theme }) => {
-  const [subTab, setSubTab] = useState('ejercicios');
-  const usersSet = Array.from(new Set(prs.map(p => p.nombre)));
+  // Filtrado general de Récords
+  const filteredPrs = useMemo(() => prs.filter(p => selectedUsers.length === 0 || selectedUsers.includes(p.nombre)), [prs, selectedUsers]);
 
-  const renderTable = () => {
-    if (subTab === 'ejercicios') {
-      const grouped = {};
-      prs.forEach(pr => {
-        if (!grouped[pr.ejercicio]) grouped[pr.ejercicio] = {};
-        if (pr.peso !== null) {
-          const current = grouped[pr.ejercicio][pr.nombre] || 0;
-          if (pr.peso > current) grouped[pr.ejercicio][pr.nombre] = pr.peso;
-        }
+  // Gráfico 1: Multilínea de Progreso General
+  const chart1Data = useMemo(() => {
+    const datesMap = {};
+    const datesSet = new Set(filteredPrs.map(p => p.fecha.split('T')[0]));
+    const sortedDates = Array.from(datesSet).sort();
+    
+    // Inicializar cada fecha con contador 0 para cada usuario activo
+    const usersToTrack = selectedUsers.length > 0 ? selectedUsers : allUsers;
+    sortedDates.forEach(date => {
+      datesMap[date] = { dateFormatted: new Date(date).toLocaleDateString([], { day: '2-digit', month: '2-digit' }) };
+      usersToTrack.forEach(u => datesMap[date][u] = 0);
+    });
+
+    // Sumar ejercicios
+    filteredPrs.forEach(p => {
+      const dKey = p.fecha.split('T')[0];
+      if (datesMap[dKey][p.nombre] !== undefined) datesMap[dKey][p.nombre] += 1;
+    });
+
+    return Object.values(datesMap);
+  }, [filteredPrs, selectedUsers, allUsers]);
+
+  // Gráfico 2: Hitmap Muscular
+  // Se pondera utilizando los porcentajes del CATEGORY_MAP
+  const muscleIntensity = useMemo(() => {
+    const counts = {};
+    const dates = {};
+    const targetPrs = selectedUsers.length === 1 ? prs.filter(p => p.nombre === selectedUsers[0]) : filteredPrs;
+    
+    targetPrs.forEach(p => {
+      const dict = CATEGORY_MAP[p.ejercicio?.toUpperCase()] || { muscles: { otros: 1 } };
+      Object.entries(dict.muscles).forEach(([m, pct]) => {
+        counts[m] = (counts[m] || 0) + (1 * pct);
+        if (!dates[m] || new Date(p.fecha) > new Date(dates[m])) dates[m] = p.fecha;
       });
-      return Object.keys(grouped).sort().map(ej => {
-        const stats = usersSet.map(u => ({ name: u, max: grouped[ej][u] || null })).sort((a,b) => (b.max||0) - (a.max||0));
-        return (
-          <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} key={ej} className={`rounded-2xl border mb-4 overflow-hidden ${t.card}`}>
-            <div className={`px-3 py-2 md:px-4 md:py-3 bg-black/5 border-b ${theme === 'dark' ? 'border-slate-700' : 'border-slate-200'}`}><h3 className="font-bold text-sm md:text-base">{ej}</h3></div>
-            {stats.map((s, i) => (
-              <div key={s.name} className={`flex justify-between p-2.5 px-3 md:p-3 md:px-4 border-b last:border-b-0 ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-100'} ${i===0 && s.max ? t.accentLightBg : ''}`}>
-                <div className="flex gap-2 items-center">
-                  <span className={`w-5 h-5 md:w-6 md:h-6 rounded-full flex items-center justify-center text-[10px] md:text-xs font-bold ${i===0 && s.max ? `${t.accentBg} text-white` : 'bg-black/10'}`}>{i===0 && s.max ? <Trophy size={10}/> : i+1}</span>
-                  <span className={`font-bold text-xs md:text-sm ${i===0 && s.max ? t.accentText : ''}`}>{s.name}</span>
-                </div>
-                <span className="font-black text-xs md:text-sm opacity-80">{s.max ? `${s.max} kg` : <span className="text-[10px] font-normal opacity-50">Sin inf.</span>}</span>
-              </div>
-            ))}
-          </motion.div>
-        );
-      });
-    }
+    });
+    
+    const maxVal = Math.max(...Object.values(counts), 1);
+    const ratios = {};
+    Object.keys(counts).forEach(m => ratios[m] = counts[m] / maxVal);
+    
+    return { ratios, dates, raw: counts };
+  }, [filteredPrs, prs, selectedUsers]);
 
-    if (subTab === 'musculos') {
-      const muscles = Array.from(new Set(Object.values(CATEGORY_MAP).map(v => v.muscle))).sort();
-      return muscles.map(m => {
-        const counts = {};
-        prs.filter(p => getMuscle(p.ejercicio) === m).forEach(p => counts[p.nombre] = (counts[p.nombre] || 0) + 1);
-        const stats = usersSet.map(u => ({ name: u, count: counts[u] || 0 })).sort((a,b) => b.count - a.count);
-        return (
-          <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} key={m} className={`rounded-2xl border mb-4 overflow-hidden ${t.card}`}>
-            <div className={`px-3 py-2 md:px-4 md:py-3 bg-black/5 border-b ${theme === 'dark' ? 'border-slate-700' : 'border-slate-200'}`}><h3 className="font-bold capitalize text-sm md:text-base">{m}</h3></div>
-            {stats.map((s, i) => (
-              <div key={s.name} className={`flex justify-between p-2.5 px-3 md:p-3 md:px-4 border-b last:border-b-0 ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-100'} ${i===0 && s.count>0 ? t.accentLightBg : ''}`}>
-                <span className="font-bold text-xs md:text-sm">{s.name}</span>
-                <span className="opacity-80 text-xs md:text-sm">{s.count} ejs</span>
-              </div>
-            ))}
-          </motion.div>
-        );
-      });
-    }
-
-    if (subTab === 'consistencia') {
-      const d8 = new Date(); d8.setDate(d8.getDate() - 8);
-      const counts = {};
-      prs.filter(p => new Date(p.fecha) >= d8).forEach(p => counts[p.nombre] = (counts[p.nombre] || 0) + 1);
-      const stats = usersSet.map(u => ({ name: u, count: counts[u] || 0 })).sort((a,b) => b.count - a.count);
-      return (
-        <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} className={`rounded-2xl border overflow-hidden ${t.card}`}>
-          <div className={`px-3 py-2 md:px-4 md:py-3 bg-black/5 border-b ${theme === 'dark' ? 'border-slate-700' : 'border-slate-200'}`}><h3 className="font-bold text-sm md:text-base">Ejercicios últimos 8 días</h3></div>
-          {stats.map((s, i) => (
-            <div key={s.name} className={`flex justify-between p-2.5 px-3 md:p-3 md:px-4 border-b last:border-b-0 ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-100'} ${i===0 && s.count>0 ? t.accentLightBg : ''}`}>
-              <div className="flex gap-2 items-center">
-                <span className={`w-5 h-5 md:w-6 md:h-6 rounded-full flex items-center justify-center text-[10px] md:text-xs font-bold ${i===0 && s.count>0 ? `${t.accentBg} text-white` : 'bg-black/10'}`}>{i===0 && s.count>0 ? <Trophy size={10}/> : i+1}</span>
-                <span className="font-bold text-xs md:text-sm">{s.name}</span>
-              </div>
-              <span className="font-black text-xs md:text-sm opacity-80">{s.count}</span>
-            </div>
-          ))}
-        </motion.div>
-      );
-    }
-  };
+  // Determinar anatomía base a renderizar
+  let baseAnatomy = currentUser.anatomy || 'masculino';
+  if (selectedUsers.length === 1) {
+    const sUser = usersDb.find(u => u.username === selectedUsers[0]);
+    if (sUser && sUser.anatomy) baseAnatomy = sUser.anatomy;
+  }
 
   return (
-    <div className="space-y-4">
-      <div className="flex bg-black/5 p-1 rounded-xl w-full max-w-md mx-auto overflow-x-auto custom-scrollbar">
-        {['ejercicios', 'musculos', 'consistencia'].map(tab => (
-          <button key={tab} onClick={() => { playClickSound(); setSubTab(tab); }} className={`flex-1 whitespace-nowrap px-2 py-2 text-[10px] md:text-xs font-bold rounded-lg capitalize transition-all active:scale-95 ${subTab === tab ? `${t.accentBg} text-white shadow-md` : 'opacity-60 hover:opacity-100'}`}>
-            {tab}
-          </button>
-        ))}
+    <div className="space-y-6">
+      <div className={`p-5 rounded-xl border ${t.card}`}>
+        <div className="flex items-center gap-2 mb-4"><Filter size={18} className={t.accentText}/><h3 className="font-bold">Perfiles a Comparar</h3></div>
+        <div className="flex flex-wrap gap-2">
+          {allUsers.map((u, i) => {
+            const isActive = selectedUsers.includes(u);
+            const userColor = CHART_COLORS[i % CHART_COLORS.length];
+            return (
+              <button key={u} onClick={() => toggleUser(u)} style={isActive ? { backgroundColor: userColor, color: '#fff', borderColor: userColor } : {}} className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all border ${isActive ? '' : t.btn}`}>
+                {u}
+              </button>
+            );
+          })}
+        </div>
       </div>
-      <div>{renderTable()}</div>
+
+      {/* CHART: Multilinea */}
+      <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} className={`p-5 rounded-xl border ${t.card}`}>
+        <h3 className="font-bold mb-4 tracking-tight">Evolución de Actividad Diaria</h3>
+        <div className="h-64 w-full">
+          {chart1Data.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chart1Data} margin={{ top: 5, right: 10, bottom: 5, left: -20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#30363d' : '#d0d7de'} vertical={false} />
+                <XAxis dataKey="dateFormatted" stroke={t.textMutedColor} fontSize={10} axisLine={false} tickLine={false} dy={10} />
+                <YAxis stroke={t.textMutedColor} fontSize={10} axisLine={false} tickLine={false} allowDecimals={false} dx={-10} />
+                <Tooltip contentStyle={{ backgroundColor: theme === 'dark' ? '#0d1117' : '#fff', borderRadius: '8px', borderColor: theme === 'dark' ? '#30363d' : '#d0d7de', color: theme === 'dark' ? '#fff' : '#000', fontSize: '12px' }} />
+                <Legend iconType="circle" wrapperStyle={{ fontSize: '11px', paddingTop: '15px' }} />
+                {(selectedUsers.length > 0 ? selectedUsers : allUsers).map((u, i) => (
+                  <Line key={u} type="monotone" dataKey={u} name={u} stroke={CHART_COLORS[i % CHART_COLORS.length]} strokeWidth={3} dot={{ r: 3, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          ) : <p className={`text-center mt-20 text-sm font-bold ${t.textMuted}`}>Sin datos de actividad.</p>}
+        </div>
+      </motion.div>
+
+      {/* CHART: Mapa Muscular Pop-Art */}
+      <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} className={`p-5 rounded-xl border ${t.card} flex flex-col items-center`}>
+        <div className="w-full mb-4 text-center">
+          <h3 className="font-bold tracking-tight">Impacto Anatómico</h3>
+          <p className={`text-xs mt-1 ${t.textMuted}`}>Fisionomía: {baseAnatomy} | Colores miden el volumen relativo (Github Style).</p>
+        </div>
+
+        <div className="flex w-full max-w-lg justify-around py-4 gap-4">
+          <svg viewBox="0 0 200 280" className="w-1/2 drop-shadow-lg max-h-[400px]">
+            <g stroke={theme === 'dark' ? '#0d1117' : '#fff'} strokeWidth="1.5" strokeLinejoin="miter">
+              <circle cx="100" cy="20" r="15" fill={theme === 'dark' ? '#161b22' : '#e2e8f0'} />
+              <path d="M 85 35 L 115 35 L 120 45 L 80 45 Z" fill={theme === 'dark' ? '#161b22' : '#e2e8f0'} />
+              {ANATOMY_PATHS[baseAnatomy].frente.map(p => (
+                <path key={p.id} d={p.d} fill={getHeatmapColor(muscleIntensity.ratios[p.id] || 0)} className="transition-all duration-300 hover:brightness-125" >
+                  <title>{p.label}: {Math.round(muscleIntensity.raw[p.id] || 0)} puntos de vol.</title>
+                </path>
+              ))}
+            </g>
+          </svg>
+          <svg viewBox="0 0 200 280" className="w-1/2 drop-shadow-lg max-h-[400px]">
+            <g stroke={theme === 'dark' ? '#0d1117' : '#fff'} strokeWidth="1.5" strokeLinejoin="miter">
+              <circle cx="100" cy="20" r="15" fill={theme === 'dark' ? '#161b22' : '#e2e8f0'} />
+              <path d="M 85 35 L 115 35 L 120 45 L 80 45 Z" fill={theme === 'dark' ? '#161b22' : '#e2e8f0'} />
+              {ANATOMY_PATHS[baseAnatomy].espalda.map(p => (
+                <path key={p.id} d={p.d} fill={getHeatmapColor(muscleIntensity.ratios[p.id] || 0)} className="transition-all duration-300 hover:brightness-125" >
+                  <title>{p.label}: {Math.round(muscleIntensity.raw[p.id] || 0)} puntos de vol.</title>
+                </path>
+              ))}
+            </g>
+          </svg>
+        </div>
+      </motion.div>
     </div>
   );
 };
 
+const PerfilTab = ({ currentUser, t }) => {
+  const [form, setForm] = useState({ username: currentUser.username, anatomy: currentUser.anatomy || 'masculino', password: '' });
+  const [msg, setMsg] = useState('');
+  const [loading, setLoading] = useState(false);
 
-const AnalyticsTab = ({ prs, currentUser, usersDb, ejerciciosLista, t, theme }) => {
-  const allUsers = Array.from(new Set(prs.map(p => p.nombre))).sort();
-  
-  const [selectedUsers, setSelectedUsers] = useState([]); 
-  const [selectedCategory, setSelectedCategory] = useState('TODOS');
-  const [selectedExercise, setSelectedExercise] = useState('TODOS');
-  const [selectedMuscleFilter, setSelectedMuscleFilter] = useState('TODOS');
-  const [timeRange, setTimeRange] = useState('TODOS');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [hoveredMuscle, setHoveredMuscle] = useState(null);
-  const [clickedMuscle, setClickedMuscle] = useState(null);
-
-  const toggleUser = (u) => {
-    playClickSound();
-    setSelectedUsers(prev => prev.includes(u) ? prev.filter(x => x !== u) : [...prev, u]);
-  };
-
-  const filteredPrs = useMemo(() => {
-    return prs.filter(p => {
-      if (selectedUsers.length > 0 && !selectedUsers.includes(p.nombre)) return false;
-      if (selectedCategory !== 'TODOS' && getCategory(p.ejercicio) !== selectedCategory) return false;
-      if (selectedExercise !== 'TODOS' && p.ejercicio !== selectedExercise) return false;
-      if (selectedMuscleFilter !== 'TODOS' && getMuscle(p.ejercicio) !== selectedMuscleFilter) return false;
+  const handleUpdate = async (e) => {
+    e.preventDefault(); playClickSound(); setMsg(''); setLoading(true);
+    try {
+      const updates = {};
+      if (form.username !== currentUser.username) {
+        await updateProfile(auth.currentUser, { displayName: form.username });
+        updates.username = form.username;
+      }
+      if (form.anatomy !== currentUser.anatomy) updates.anatomy = form.anatomy;
       
-      const prDate = new Date(p.fecha);
-      if (timeRange === '7D') {
-        const d7 = new Date(); d7.setDate(d7.getDate() - 7);
-        if (prDate < d7) return false;
-      } else if (timeRange === '30D') {
-        const d30 = new Date(); d30.setDate(d30.getDate() - 30);
-        if (prDate < d30) return false;
-      } else if (timeRange === '1Y') {
-        const d1y = new Date(); d1y.setFullYear(d1y.getFullYear() - 1);
-        if (prDate < d1y) return false;
-      } else if (timeRange === 'CUSTOM') {
-        if (startDate && new Date(startDate) > prDate) return false;
-        if (endDate && new Date(endDate) < prDate) return false;
-      }
-      return true;
-    });
-  }, [prs, selectedUsers, selectedCategory, selectedExercise, selectedMuscleFilter, timeRange, startDate, endDate]);
-
-  const muscleLastTrained = useMemo(() => {
-    const dates = {};
-    filteredPrs.forEach(p => {
-      const m = getMuscle(p.ejercicio);
-      if (!dates[m] || new Date(p.fecha) > new Date(dates[m])) dates[m] = p.fecha;
-    });
-    return dates;
-  }, [filteredPrs]);
-
-  const muscleCounts = useMemo(() => {
-    const counts = {};
-    filteredPrs.forEach(p => {
-      const m = getMuscle(p.ejercicio);
-      counts[m] = (counts[m] || 0) + 1;
-    });
-    return counts;
-  }, [filteredPrs]);
-
-  const chart1Data = useMemo(() => {
-    const datesMap = {};
-    const cumulativeMaxes = {};
-    const sortedPrs = [...filteredPrs].sort((a,b) => new Date(a.fecha) - new Date(b.fecha));
-    
-    sortedPrs.forEach(p => {
-      const dKey = p.fecha.split('T')[0];
-      if (!datesMap[dKey]) datesMap[dKey] = { date: dKey, count: 0, prCount: 0 };
-      datesMap[dKey].count += 1; 
-
-      if (p.peso !== null) {
-        const userExKey = `${p.nombre}-${p.ejercicio}`;
-        const currentMax = cumulativeMaxes[userExKey] || 0;
-        if (p.peso > currentMax) {
-          datesMap[dKey].prCount += 1;
-          cumulativeMaxes[userExKey] = p.peso;
-        }
-      }
-    });
-    return Object.values(datesMap).map(d => ({
-      ...d, dateFormatted: new Date(d.date).toLocaleDateString([], { day: '2-digit', month: '2-digit' })
-    }));
-  }, [filteredPrs]);
-
-  const chart2Data = useMemo(() => {
-    const exerciseMaxes = {};
-    filteredPrs.forEach(p => {
-      if (p.peso !== null) {
-        if (!exerciseMaxes[p.ejercicio] || p.peso > exerciseMaxes[p.ejercicio]) {
-          exerciseMaxes[p.ejercicio] = p.peso;
-        }
-      }
-    });
-    return Object.keys(exerciseMaxes).map(ex => ({ ejercicio: ex, peso: exerciseMaxes[ex] })).sort((a,b) => b.peso - a.peso);
-  }, [filteredPrs]);
-
-  const chart4Data = useMemo(() => {
-    if (!clickedMuscle) return [];
-    const datesMap = {};
-    filteredPrs.filter(p => getMuscle(p.ejercicio) === clickedMuscle).forEach(p => {
-      const dKey = p.fecha.split('T')[0];
-      if (!datesMap[dKey]) datesMap[dKey] = { date: dKey, count: 0 };
-      datesMap[dKey].count += 1;
-    });
-    return Object.values(datesMap).sort((a,b) => new Date(a.date) - new Date(b.date)).map(d => ({
-      ...d, dateFormatted: new Date(d.date).toLocaleDateString([], { day: '2-digit', month: '2-digit' })
-    }));
-  }, [filteredPrs, clickedMuscle]);
-
-  const renderStarDot = (props) => {
-    const { cx, cy, payload, index } = props;
-    const uniqueKey = `star-dot-${index}-${cx}`;
-    if (!payload || payload.prCount === 0) return <circle key={uniqueKey} cx={cx} cy={cy} r={4} fill={theme === 'dark' ? '#e53935' : '#1565c0'} />;
-    
-    let starColor = '#FFD700'; 
-    if (payload.prCount === 2) starColor = '#E5E4E2'; 
-    if (payload.prCount >= 3) starColor = '#FF00FF'; 
-
-    return (
-      <g key={uniqueKey} transform={`translate(${cx - 10}, ${cy - 10})`}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill={starColor} stroke="#000" strokeWidth="1" className="drop-shadow-md animate-pulse">
-          <polygon points="12,2 15,9 22,9 16,14 18,21 12,17 6,21 8,14 2,9 9,9" />
-        </svg>
-      </g>
-    );
+      if (Object.keys(updates).length > 0) await updateDoc(doc(db, 'users', currentUser.id), updates);
+      if (form.password) { await updatePassword(auth.currentUser, form.password); setForm({...form, password: ''}); }
+      
+      setMsg("¡Perfil actualizado con éxito!");
+    } catch (err) { setMsg(translateFirebaseError(err)); }
+    setLoading(false);
   };
-
-  // Determine base gender from selected users or current user
-  let baseGender = currentUser.gender;
-  if (selectedUsers.length === 1) {
-    const sUser = usersDb.find(u => u.username === selectedUsers[0]);
-    if (sUser) baseGender = sUser.gender;
-  }
 
   return (
-    <div className="space-y-4 md:space-y-6">
-      {/* FILTROS */}
-      <div className={`p-4 md:p-6 rounded-2xl border ${t.card} space-y-3 md:space-y-4`}>
-        <div className="flex items-center gap-2 border-b pb-2 md:pb-3 border-slate-500/20">
-          <Filter className={t.accentText} size={18} />
-          <h3 className="font-bold text-base md:text-lg">Filtros</h3>
+    <div className={`max-w-md mx-auto p-6 rounded-xl border ${t.card}`}>
+      <h2 className="text-xl font-bold tracking-tight mb-6 flex items-center gap-2"><Settings size={20} className={t.accentText}/> Configuración</h2>
+      {msg && <div className="mb-6 p-3 bg-black/10 rounded-lg text-sm font-bold text-center">{msg}</div>}
+      
+      <form onSubmit={handleUpdate} className="space-y-4">
+        <div><label className={`block text-xs font-bold mb-1.5 ${t.textMuted}`}>Nombre Público</label><input type="text" value={form.username} onChange={e => setForm({...form, username: e.target.value})} className={`w-full p-3 text-sm rounded-lg border outline-none ${t.input}`} /></div>
+        <div><label className={`block text-xs font-bold mb-1.5 ${t.textMuted}`}>Fisionomía Anatómica Base</label>
+          <select value={form.anatomy} onChange={e => setForm({...form, anatomy: e.target.value})} className={`w-full p-3 text-sm rounded-lg border outline-none ${t.input}`}>
+            <option value="masculino">Físico Masculino</option><option value="femenino">Físico Femenino</option>
+          </select>
         </div>
-        
-        <div>
-          <label className={`block text-[10px] md:text-xs font-bold mb-2 ${t.textMuted}`}>Perfiles Analizados</label>
-          <div className="flex flex-wrap gap-1.5 md:gap-2">
-            <button onClick={() => { playClickSound(); setSelectedUsers([]); }} className={`px-2.5 py-1 md:px-3 md:py-1.5 rounded-full text-[10px] md:text-xs font-bold transition-all ${selectedUsers.length === 0 ? `${t.accentBg} text-white` : 'bg-black/10'}`}>Todos</button>
-            {allUsers.map(u => (
-              <button key={u} onClick={() => toggleUser(u)} className={`px-2.5 py-1 md:px-3 md:py-1.5 rounded-full text-[10px] md:text-xs font-bold transition-all ${selectedUsers.includes(u) ? `${t.accentBg} text-white` : 'bg-black/10'}`}>
-                {u}
-              </button>
-            ))}
-          </div>
-        </div>
+        <div className={`pt-4 border-t ${t.borderMuted}`}><label className={`block text-xs font-bold mb-1.5 ${t.textMuted}`}>Cambiar Contraseña (Opcional)</label><input type="password" placeholder="Nueva contraseña..." value={form.password} onChange={e => setForm({...form, password: e.target.value})} className={`w-full p-3 text-sm rounded-lg border outline-none ${t.input}`} /></div>
+        <button type="submit" disabled={loading} className={`w-full p-3 mt-4 rounded-lg font-bold text-white transition-all active:scale-95 shadow-md ${t.accentBg}`}>{loading ? 'Guardando...' : 'Guardar Cambios'}</button>
+      </form>
+    </div>
+  );
+};
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-3">
-          <div><label className={`block text-[10px] md:text-xs font-bold mb-1 ${t.textMuted}`}>Categoría</label><select value={selectedCategory} onChange={e => { playClickSound(); setSelectedCategory(e.target.value); setSelectedExercise('TODOS'); }} className={`w-full p-2 md:p-2.5 rounded-lg border text-[11px] md:text-sm font-bold outline-none ${t.input}`}><option value="TODOS">TODAS</option>{Array.from(new Set(Object.values(CATEGORY_MAP).map(v => v.cat))).sort().map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-          <div><label className={`block text-[10px] md:text-xs font-bold mb-1 ${t.textMuted}`}>Músculo</label><select value={selectedMuscleFilter} onChange={e => { playClickSound(); setSelectedMuscleFilter(e.target.value); }} className={`w-full p-2 md:p-2.5 rounded-lg border text-[11px] md:text-sm font-bold outline-none ${t.input}`}><option value="TODOS">TODOS</option>{Array.from(new Set(Object.values(CATEGORY_MAP).map(v => v.muscle))).sort().map(m => <option key={m} value={m} className="capitalize">{m}</option>)}</select></div>
-          <div><label className={`block text-[10px] md:text-xs font-bold mb-1 ${t.textMuted}`}>Ejercicio</label><select value={selectedExercise} onChange={e => { playClickSound(); setSelectedExercise(e.target.value); }} className={`w-full p-2 md:p-2.5 rounded-lg border text-[11px] md:text-sm font-bold outline-none ${t.input}`}><option value="TODOS">TODOS</option>{ejerciciosLista.filter(e => selectedCategory === 'TODOS' || getCategory(e) === selectedCategory).sort().map(ex => <option key={ex} value={ex}>{ex}</option>)}</select></div>
-        </div>
-        
-        <div className="flex flex-wrap gap-2 md:gap-3 items-center pt-2 border-t border-slate-500/10 mt-2">
-          <span className={`text-[10px] md:text-xs font-bold ${t.textMuted}`}>Tiempo:</span>
-          {['TODOS', '7D', '30D', '1Y', 'CUSTOM'].map(r => (
-            <button key={r} onClick={() => { playClickSound(); setTimeRange(r); }} className={`px-2 py-1 md:px-3 md:py-1 rounded-lg text-[10px] md:text-xs font-bold transition-all active:scale-95 ${timeRange === r ? `${t.accentBg} text-white` : 'bg-black/5 hover:bg-black/10'}`}>
-              {r === 'TODOS' ? 'Todos' : r === '7D' ? 'Últimos 7d' : r === '30D' ? 'Mes' : r === '1Y' ? 'Año' : 'Personal'}
-            </button>
-          ))}
-          {timeRange === 'CUSTOM' && (
-            <div className="flex items-center gap-1.5 md:gap-2 mt-2 sm:mt-0 w-full sm:w-auto text-xs">
-              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={`p-1 md:p-1.5 rounded-lg border text-[10px] md:text-xs ${t.input}`} /><span>a</span>
-              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={`p-1 md:p-1.5 rounded-lg border text-[10px] md:text-xs ${t.input}`} />
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* CHART 1 */}
-      <motion.div initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} className={`p-4 md:p-6 rounded-2xl border ${t.card}`}>
-        <div className="flex justify-between items-center mb-3 md:mb-4 flex-wrap gap-2">
-          <h3 className="font-bold text-sm md:text-lg">Evolución y Récords</h3>
-          <div className="flex gap-2 md:gap-3 text-[9px] md:text-xs bg-black/10 px-2 py-1 md:px-3 md:py-1.5 rounded-full">
-            <span className="flex items-center gap-0.5 md:gap-1 font-bold"><span className="text-[#FFD700]">★</span> 1 PR</span>
-            <span className="flex items-center gap-0.5 md:gap-1 font-bold"><span className="text-[#E5E4E2]">★</span> 2 PR</span>
-            <span className="flex items-center gap-0.5 md:gap-1 font-bold"><span className="text-[#FF00FF]">★</span> 3+ PR</span>
-          </div>
-        </div>
-        <div className="h-48 md:h-64 w-full">
-          {chart1Data.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chart1Data} margin={{ top: 15, right: 10, bottom: 5, left: -20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#334155' : '#e2e8f0'} vertical={false} />
-                <XAxis dataKey="dateFormatted" stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} axisLine={false} tickLine={false} dy={10} />
-                <YAxis stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} axisLine={false} tickLine={false} allowDecimals={false} dx={-10} />
-                <Tooltip contentStyle={{ backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', borderRadius: '12px', borderColor: '#475569', color: theme === 'dark' ? '#fff' : '#000' }} formatter={(val, name, item) => [`${val} ejercicios (Récords: ${item.payload.prCount})`, 'Volumen']} />
-                <Line type="monotone" dataKey="count" stroke={theme === 'dark' ? '#e53935' : '#1565c0'} strokeWidth={3} dot={renderStarDot} activeDot={{ r: 7 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : <p className="text-center mt-12 md:mt-20 opacity-50 text-xs md:text-sm font-bold">No hay datos en este filtro.</p>}
-        </div>
-      </motion.div>
-
-      <div className="grid lg:grid-cols-2 gap-4 md:gap-6">
-        {/* CHART 2 */}
-        <motion.div initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} className={`p-4 md:p-6 rounded-2xl border ${t.card} flex flex-col`}>
-          <h3 className="font-bold text-sm md:text-lg mb-3 md:mb-4">PRs Actuales (kg)</h3>
-          {chart2Data.length === 0 ? (
-            <div className={`my-auto text-center p-6 md:p-8 text-xs md:text-sm ${t.textMuted}`}>Sin datos de peso registrados.</div>
-          ) : (
-            <div className="h-64 md:h-80 w-full overflow-y-auto pr-1 md:pr-2 custom-scrollbar">
-              <ResponsiveContainer width="100%" height={Math.max(250, chart2Data.length * 30)}>
-                <BarChart data={chart2Data} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 60 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={theme === 'dark' ? '#334155' : '#e2e8f0'} />
-                  <XAxis type="number" stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} axisLine={false} tickLine={false} />
-                  <YAxis dataKey="ejercicio" type="category" stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={8} md:fontSize={9} axisLine={false} tickLine={false} width={80} />
-                  <Tooltip cursor={{fill: theme==='dark'?'#ffffff10':'#00000010'}} contentStyle={{ backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', borderRadius: '12px', color: theme === 'dark' ? '#fff' : '#000' }} formatter={(val) => [`${val} kg`, 'Récord']} />
-                  <Bar dataKey="peso" radius={[0, 8, 8, 0]}>
-                    {chart2Data.map((_, index) => <Cell key={`cell-${index}`} fill={theme === 'dark' ? `hsl(${350 - index * (60/chart2Data.length)}, 75%, 50%)` : `hsl(${210 + index * (60/chart2Data.length)}, 75%, 50%)`} />)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </motion.div>
-
-        {/* MAPA ANATÓMICO */}
-        <motion.div initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} className={`p-4 md:p-6 rounded-2xl border ${t.card} flex flex-col items-center relative overflow-hidden`}>
-          <div className="w-full mb-3 md:mb-4">
-            <h3 className="font-bold text-sm md:text-lg text-center">Estado Muscular Actual</h3>
-            <div className="flex justify-center gap-1 text-[8px] md:text-[10px] font-bold mt-1.5 md:mt-2 bg-black/5 p-1 rounded-full w-max mx-auto">
-              <span className="text-green-500 px-1.5 py-0.5">&le; 9d</span>
-              <span className="text-yellow-500 px-1.5 py-0.5">10-18d</span>
-              <span className="text-orange-500 px-1.5 py-0.5">19-27d</span>
-              <span className="text-red-500 px-1.5 py-0.5">&gt; 27d</span>
-            </div>
-          </div>
-
-          {hoveredMuscle && (
-            <div className="absolute top-20 bg-black/90 text-white px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-xs md:text-sm font-bold z-20 pointer-events-none shadow-2xl border border-white/20">
-              {hoveredMuscle.label}: {muscleCounts[hoveredMuscle.id] || 0} series totales
-            </div>
-          )}
-
-          <div className="flex w-full justify-around py-2 gap-2 md:gap-4">
-            {/* Frente */}
-            <svg viewBox="0 0 200 300" className="w-1/2 max-w-[120px] md:max-w-[160px] drop-shadow-xl overflow-visible">
-              <g stroke={theme === 'dark' ? '#222' : '#fff'} strokeWidth="1.5" strokeLinejoin="round">
-                <ellipse cx="100" cy="25" rx="14" ry="18" fill={theme === 'dark' ? '#262626' : '#e2e8f0'} />
-                <path d="M 86 40 Q 100 45 114 40 L 122 50 L 78 50 Z" fill={theme === 'dark' ? '#262626' : '#e2e8f0'} />
-                {ANATOMY_PATHS[baseGender].frente.map(p => {
-                  const isSelected = clickedMuscle === p.id;
-                  const muscleColor = getMuscleColorByDays(muscleLastTrained[p.id]);
-                  return (
-                    <path key={p.id} d={p.d} fill={muscleColor} stroke={isSelected ? '#fff' : (theme === 'dark' ? '#222' : '#fff')} strokeWidth={isSelected ? '3' : '1.5'}
-                      onMouseEnter={() => setHoveredMuscle(p)} onMouseLeave={() => setHoveredMuscle(null)} onClick={() => { playClickSound(); setClickedMuscle(p.id); }}
-                      className="transition-all duration-300 cursor-pointer hover:brightness-125 transform origin-center hover:scale-105"
-                    />
-                  );
-                })}
-              </g>
-            </svg>
-            
-            {/* Espalda */}
-            <svg viewBox="0 0 200 300" className="w-1/2 max-w-[120px] md:max-w-[160px] drop-shadow-xl overflow-visible">
-              <g stroke={theme === 'dark' ? '#222' : '#fff'} strokeWidth="1.5" strokeLinejoin="round">
-                <ellipse cx="100" cy="25" rx="14" ry="18" fill={theme === 'dark' ? '#262626' : '#e2e8f0'} />
-                <path d="M 86 40 Q 100 45 114 40 L 122 50 L 78 50 Z" fill={theme === 'dark' ? '#262626' : '#e2e8f0'} />
-                {ANATOMY_PATHS[baseGender].espalda.map(p => {
-                  const isSelected = clickedMuscle === p.id;
-                  const muscleColor = getMuscleColorByDays(muscleLastTrained[p.id]);
-                  return (
-                    <path key={p.id} d={p.d} fill={muscleColor} stroke={isSelected ? '#fff' : (theme === 'dark' ? '#222' : '#fff')} strokeWidth={isSelected ? '3' : '1.5'}
-                      onMouseEnter={() => setHoveredMuscle(p)} onMouseLeave={() => setHoveredMuscle(null)} onClick={() => { playClickSound(); setClickedMuscle(p.id); }}
-                      className="transition-all duration-300 cursor-pointer hover:brightness-125 transform origin-center hover:scale-105"
-                    />
-                  );
-                })}
-              </g>
-            </svg>
-          </div>
-          <p className={`text-[10px] md:text-xs mt-3 md:mt-4 ${t.textMuted} text-center`}>Click en un músculo para aislar su historial.</p>
-        </motion.div>
-      </div>
-
-      {/* CHART 4 */}
-      <AnimatePresence>
-        {clickedMuscle && (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-            <div className={`p-4 md:p-6 mt-4 md:mt-6 rounded-2xl border ${t.card}`}>
-              <div className="flex justify-between items-center mb-3 md:mb-4">
-                <h3 className="font-bold text-sm md:text-lg flex items-center gap-1.5 md:gap-2 capitalize"><Sparkles className={t.accentText} size={16} /> Aislar: {clickedMuscle}</h3>
-                <button onClick={() => { playClickSound(); setClickedMuscle(null); }} className="text-xs px-2 py-1 bg-black/10 rounded-lg hover:bg-black/20 transition-colors"><X size={14}/></button>
-              </div>
-              {chart4Data.length === 0 ? (
-                <p className={`text-center p-6 md:p-8 text-xs md:text-sm ${t.textMuted}`}>No hay registros en el filtro seleccionado.</p>
-              ) : (
-                <div className="h-48 md:h-64 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chart4Data} margin={{ top: 10, right: 10, bottom: 5, left: -20 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#334155' : '#e2e8f0'} vertical={false} />
-                      <XAxis dataKey="dateFormatted" stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} axisLine={false} tickLine={false} />
-                      <YAxis stroke={theme === 'dark' ? '#94a3b8' : '#64748b'} fontSize={10} axisLine={false} tickLine={false} allowDecimals={false} />
-                      <Tooltip cursor={{fill: theme==='dark'?'#ffffff10':'#00000010'}} contentStyle={{ backgroundColor: theme === 'dark' ? '#1e293b' : '#fff', borderRadius: '12px', color: theme === 'dark' ? '#fff' : '#000' }} formatter={(val) => [`${val} ejercicios`, 'Volumen']} />
-                      <Bar dataKey="count" fill={theme === 'dark' ? '#e53935' : '#1565c0'} radius={[6, 6, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+const GruposTab = ({ currentUser, usersDb, t }) => {
+  return (
+    <div className={`p-10 text-center rounded-xl border ${t.card}`}>
+      <div className="flex justify-center mb-4 text-blue-500/50"><Users size={56} /></div>
+      <h3 className="text-2xl font-bold mb-2 tracking-tight">Clanes y Tribus</h3>
+      <p className={`text-sm max-w-sm mx-auto ${t.textMuted}`}>Próximamente podrás generar un código de invitación para crear un Clan. Los miembros del mismo clan aparecerán automáticamente en tu pestaña de Analíticas para competir.</p>
+      <button disabled className={`mt-6 px-6 py-2 rounded-lg font-bold border opacity-50 cursor-not-allowed ${t.btn}`}>Crear Clan (Pronto)</button>
     </div>
   );
 };
@@ -988,191 +648,89 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('inicio');
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [loadingMessage, setLoadingMessage] = useState('Cargando aplicación...');
   
   const [prs, setPrs] = useState([]);
   const [routines, setRoutines] = useState([]);
   const [usersDb, setUsersDb] = useState([]);
   const [ejerciciosLista, setEjerciciosLista] = useState(ejerciciosListaInicial);
-  const [animations, setAnimations] = useState([]);
 
   const t = useMemo(() => ({
-    bg: theme === 'dark' ? 'bg-[#181a1b]' : 'bg-[#f8fafc]',
-    text: theme === 'dark' ? 'text-slate-100' : 'text-slate-800',
-    textMuted: theme === 'dark' ? 'text-slate-400' : 'text-slate-500',
-    card: theme === 'dark' ? 'bg-[#222528] border-slate-700/60' : 'bg-white border-slate-200',
-    accentText: theme === 'dark' ? 'text-[#e53935]' : 'text-[#1565c0]',
-    accentBg: theme === 'dark' ? 'bg-[#e53935]' : 'bg-[#1565c0]',
-    accentBorder: theme === 'dark' ? 'border-[#e53935]' : 'border-[#1565c0]',
-    accentLightBg: theme === 'dark' ? 'bg-[#e53935]/15' : 'bg-[#1565c0]/10',
-    input: theme === 'dark' ? 'bg-[#141617] border-slate-700 text-white focus:border-[#e53935]' : 'bg-slate-50 border-slate-300 text-black focus:border-[#1565c0]'
+    bg: theme === 'dark' ? 'bg-[#010409]' : 'bg-[#f6f8fa]', // GitHub bg
+    text: theme === 'dark' ? 'text-[#c9d1d9]' : 'text-[#24292f]',
+    textMuted: theme === 'dark' ? 'text-[#8b949e]' : 'text-[#57606a]',
+    textMutedColor: theme === 'dark' ? '#8b949e' : '#57606a',
+    card: theme === 'dark' ? 'bg-[#0d1117] border-[#30363d]' : 'bg-white border-[#d0d7de]',
+    borderMuted: theme === 'dark' ? 'border-[#30363d]' : 'border-[#d0d7de]',
+    btn: theme === 'dark' ? 'bg-[#21262d] hover:bg-[#30363d] border-[#363b42] text-[#c9d1d9]' : 'bg-[#f3f4f6] hover:bg-[#e5e7eb] border-[#d0d7de] text-[#24292f]',
+    accentText: theme === 'dark' ? 'text-[#39d353]' : 'text-[#1a7f37]',
+    accentBg: theme === 'dark' ? 'bg-[#238636] hover:bg-[#2ea043]' : 'bg-[#1f883d] hover:bg-[#1a7f37]',
+    accentBorder: theme === 'dark' ? 'border-[#2ea043]' : 'border-[#1f883d]',
+    accentLightBg: theme === 'dark' ? 'bg-[#238636]/10' : 'bg-[#1f883d]/10',
+    ringAccent: theme === 'dark' ? 'ring-[#2ea043]' : 'ring-[#1f883d]',
+    input: theme === 'dark' ? 'bg-[#010409] border-[#30363d] focus:border-[#58a6ff] text-[#c9d1d9]' : 'bg-[#f6f8fa] border-[#d0d7de] focus:border-[#0969da] text-[#24292f]'
   }), [theme]);
 
-  // Auth Listener
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        setLoadingMessage('Descargando tu perfil...');
-        const docRef = doc(db, 'users', user.uid);
-        const snap = await getDoc(docRef);
-        if (snap.exists()) {
-          setCurrentUser({ id: user.uid, ...snap.data(), email: user.email });
-        } else {
-          setCurrentUser({ id: user.uid, username: user.displayName || 'Atleta', email: user.email, gender: 'masculino' });
-        }
-      } else {
-        setCurrentUser(null);
-      }
+        const snap = await getDoc(doc(db, 'users', user.uid));
+        setCurrentUser({ id: user.uid, ...(snap.exists() ? snap.data() : { username: user.displayName || 'Atleta', anatomy: 'masculino' }) });
+      } else setCurrentUser(null);
       setLoading(false);
     });
     return () => unsub();
   }, []);
 
-  // Data Listeners
   useEffect(() => {
-    const unsubPrs = onSnapshot(collection(db, 'prs'), snap => setPrs(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsubRoutines = onSnapshot(collection(db, 'routines'), snap => setRoutines(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-    const unsubUsers = onSnapshot(collection(db, 'users'), snap => setUsersDb(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
-    return () => { unsubPrs(); unsubRoutines(); unsubUsers(); };
+    const uPrs = onSnapshot(collection(db, 'prs'), snap => setPrs(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const uRts = onSnapshot(collection(db, 'routines'), snap => setRoutines(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    const uUsr = onSnapshot(collection(db, 'users'), snap => setUsersDb(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+    return () => { uPrs(); uRts(); uUsr(); };
   }, []);
 
-  // Routine Import Listener
-  useEffect(() => {
-    if (!currentUser) return;
-    const checkImport = async () => {
-      const params = new URLSearchParams(window.location.search);
-      const shareId = params.get('shareRoutine');
-      if (shareId) {
-        setLoadingMessage('Importando rutina...');
-        setLoading(true);
-        try {
-          const snap = await getDoc(doc(db, 'routines', shareId));
-          if (snap.exists()) {
-            const data = snap.data();
-            await addDoc(collection(db, 'routines'), {
-              ...data, authorId: currentUser.id, authorName: currentUser.username, name: `${data.name} (Importada)`
-            });
-            alert(`¡Rutina "${data.name}" importada exitosamente a tu perfil!`);
-          }
-        } catch (e) {} 
-        finally {
-          window.history.replaceState({}, document.title, window.location.pathname);
-          setLoading(false);
-          setActiveTab('rutinas');
-        }
-      }
-    };
-    checkImport();
-  }, [currentUser]);
+  if (loading) return <div className={`min-h-screen flex items-center justify-center ${t.bg}`}><div className={`animate-spin h-8 w-8 border-2 rounded-full border-t-transparent ${t.accentBorder}`}></div></div>;
+  if (!currentUser) return <LoginScreen t={t} theme={theme} toggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />;
 
-  const triggerFunAnimation = (type = 'random') => {
-    const emojis = {
-      confetti: ['🎊', '🎉', '✨', '🎈'],
-      gimbros: ['🦍', '💪', '🏋️', '🔥'],
-      applause: ['👏', '🙌', '⭐', '😎'],
-      pr: ['🏆', '👑', '🥇', '🚀']
-    };
-    
-    let chosenKey = type;
-    if (type === 'random') {
-      const keys = ['confetti', 'gimbros', 'applause'];
-      chosenKey = keys[Math.floor(Math.random() * keys.length)];
-    }
-
-    const newAnims = Array.from({ length: 10 }).map((_, i) => ({
-      id: Date.now() + i, 
-      emoji: emojis[chosenKey][Math.floor(Math.random() * emojis[chosenKey].length)],
-      x: (Math.random() - 0.5) * window.innerWidth * 0.8, 
-      y: chosenKey === 'gimbros' ? Math.random() * 200 : -Math.random() * 400 - 100, 
-      direction: chosenKey === 'gimbros' ? -1 : 1, 
-      rotation: (Math.random() - 0.5) * 360
-    }));
-    
-    setAnimations(prev => [...prev, ...newAnims]);
-    setTimeout(() => setAnimations(prev => prev.filter(a => !newAnims.includes(a))), 3000);
-  };
-
-  const handleLogout = () => {
-    playClickSound();
-    signOut(auth);
-  };
-
-  if (loading) return (
-    <div className={`min-h-screen flex flex-col justify-center items-center ${t.bg} ${t.text}`}>
-      <div className={`animate-spin rounded-full h-10 w-10 md:h-12 md:w-12 border-b-2 mb-4 ${t.accentBorder}`}></div>
-      <p className={`font-bold text-sm md:text-base animate-pulse ${t.textMuted}`}>{loadingMessage}</p>
-    </div>
-  );
-
-  if (!currentUser) return <LoginScreen t={t} />;
-
-  const TabButton = ({ id, icon: Icon, label }) => (
-    <button onClick={() => { playClickSound(); setActiveTab(id); }} className={`flex-1 py-2 md:py-0 md:px-4 md:h-10 rounded-xl md:rounded-lg flex flex-col md:flex-row items-center justify-center gap-1 text-[10px] md:text-sm font-bold transition-all active:scale-95 ${activeTab === id ? `${t.accentBg} text-white shadow-md` : `opacity-60 hover:opacity-100 hover:bg-black/5`}`}>
-      <Icon size={16} className="md:w-[18px] md:h-[18px] mb-0.5 md:mb-0" /> <span className="">{label}</span>
+  const TabBtn = ({ id, icon: Icon, label }) => (
+    <button onClick={() => { playClickSound(); setActiveTab(id); }} className={`flex flex-col md:flex-row items-center justify-center gap-1.5 px-3 md:px-4 py-2 md:py-1.5 rounded-lg text-[10px] md:text-sm font-bold transition-colors ${activeTab === id ? `${t.card} shadow-sm border` : `border border-transparent opacity-60 hover:opacity-100 hover:bg-black/5`}`}>
+      <Icon size={16} /> <span className="hidden sm:inline">{label}</span>
     </button>
   );
 
   return (
-    <div className={`min-h-screen font-sans transition-colors duration-300 ${t.bg} ${t.text} pb-20 md:pb-0`}>
-      <nav className={`fixed bottom-0 md:sticky md:top-0 w-full z-40 p-2 md:p-4 border-t md:border-t-0 md:border-b ${t.card} backdrop-blur-md bg-opacity-95 md:bg-opacity-90`}>
-        <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-2 md:gap-0">
-          
-          <div className="hidden md:flex items-center gap-2">
-            <Dumbbell className={t.accentText} size={28} />
-            <h1 className="text-xl font-black tracking-tight">Colossus</h1>
+    <div className={`min-h-screen font-sans transition-colors duration-200 ${t.bg} ${t.text} pb-20 md:pb-0`}>
+      <header className={`sticky top-0 z-40 p-2 md:p-3 border-b ${t.card} backdrop-blur bg-opacity-95`}>
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <Dumbbell className={t.accentText} size={24} />
+            <h1 className="text-lg font-black tracking-tight hidden md:block">COLOSSUS</h1>
           </div>
           
-          <div className="flex items-center justify-between w-full md:w-auto md:gap-4 flex-1 md:flex-none">
-            <div className="flex gap-1 md:gap-2 w-full md:w-auto bg-black/5 p-1 rounded-2xl md:rounded-xl">
-              <TabButton id="inicio" icon={Home} label="Inicio" />
-              <TabButton id="rutinas" icon={Calendar} label="Rutinas" />
-              <TabButton id="ranking" icon={Trophy} label="Ranking" />
-              <TabButton id="analytics" icon={Activity} label="Analíticas" />
-            </div>
-            
-            <div className="hidden md:flex items-center gap-4 border-l pl-4 border-slate-500/20">
-              <div className="text-right flex flex-col items-end">
-                <span className="flex items-center gap-1 text-sm font-bold"><User size={14}/> {currentUser.username}</span>
-                <button onClick={handleLogout} className={`text-[10px] ${t.textMuted} hover:underline`}>Cerrar Sesión</button>
-              </div>
-              <button onClick={() => { playClickSound(); setTheme(theme === 'dark' ? 'light' : 'dark'); }} className="p-2 rounded-full hover:bg-black/10 transition-transform active:scale-90">
-                {theme === 'dark' ? <Sun size={18} className="text-amber-400" /> : <Moon size={18} className="text-indigo-600" />}
-              </button>
-            </div>
+          <div className="flex bg-black/5 p-1 rounded-xl w-full md:w-auto overflow-x-auto custom-scrollbar">
+            <TabBtn id="inicio" icon={Home} label="Inicio" />
+            <TabBtn id="rutinas" icon={Calendar} label="Rutinas" />
+            <TabBtn id="analytics" icon={Activity} label="Analíticas" />
+            <TabBtn id="grupos" icon={Users} label="Grupos" />
+            <TabBtn id="perfil" icon={Settings} label="Perfil" />
+          </div>
+          
+          <div className="flex items-center gap-3 pl-2 md:pl-4 border-l border-slate-500/20">
+            <button onClick={() => { playClickSound(); setTheme(theme === 'dark' ? 'light' : 'dark'); }} className={`p-1.5 rounded-md transition-colors ${t.btn}`}>
+              {theme === 'dark' ? <Sun size={16} className="text-[#e3b341]" /> : <Moon size={16} className="text-[#0969da]" />}
+            </button>
+            <button onClick={() => { playClickSound(); signOut(auth); }} className={`p-1.5 rounded-md text-red-500 hover:bg-red-500/10 transition-colors`}><LogOut size={16}/></button>
           </div>
         </div>
-      </nav>
+      </header>
 
-      {/* MOBILE TOP BAR (Only visible on small screens) */}
-      <div className={`md:hidden flex items-center justify-between p-3 border-b ${t.card}`}>
-        <div className="flex items-center gap-1.5">
-          <Dumbbell className={t.accentText} size={20} />
-          <h1 className="text-sm font-black tracking-tight">Incursores</h1>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-bold">{currentUser.username}</span>
-          <button onClick={() => { playClickSound(); setTheme(theme === 'dark' ? 'light' : 'dark'); }} className="p-1.5 rounded-full hover:bg-black/10">
-            {theme === 'dark' ? <Sun size={14} className="text-amber-400" /> : <Moon size={14} className="text-indigo-600" />}
-          </button>
-          <button onClick={handleLogout} className={`text-[10px] font-bold ${t.textMuted} hover:underline`}>Salir</button>
-        </div>
-      </div>
-
-      <AnimatePresence>
-        {animations.map(anim => (
-          <motion.div key={anim.id} initial={{ opacity: 1, x: 0, y: anim.direction === 1 ? -50 : window.innerHeight, rotate: 0, scale: 0.5 }} animate={{ opacity: 0, x: anim.x, y: anim.direction === 1 ? window.innerHeight : -100, rotate: anim.rotation, scale: 1.5 }} transition={{ duration: 2.5, ease: "easeOut" }} className="fixed text-3xl md:text-5xl pointer-events-none z-50 left-1/2 top-0">
-            {anim.emoji}
-          </motion.div>
-        ))}
-      </AnimatePresence>
-
-      <main className="max-w-5xl mx-auto p-3 md:p-4 py-4 md:py-8 relative min-h-[80vh]">
+      <main className="max-w-6xl mx-auto p-4 md:py-8">
         <AnimatePresence mode="wait">
-          <motion.div key={activeTab} initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-10}} transition={{duration:0.2}}>
-            {activeTab === 'inicio' && <InicioTab currentUser={currentUser} routines={routines} prs={prs} t={t} theme={theme} onTriggerAnimation={triggerFunAnimation} />}
-            {activeTab === 'rutinas' && <RutinasTab currentUser={currentUser} routines={routines} ejerciciosLista={ejerciciosLista} setEjerciciosLista={setEjerciciosLista} setCurrentUser={setCurrentUser} t={t} theme={theme} setLoading={setLoading} setLoadingMessage={setLoadingMessage} />}
-            {activeTab === 'ranking' && <RankingTab prs={prs} t={t} theme={theme} />}
-            {activeTab === 'analytics' && <AnalyticsTab prs={prs} currentUser={currentUser} usersDb={usersDb} ejerciciosLista={ejerciciosLista} t={t} theme={theme} />}
+          <motion.div key={activeTab} initial={{opacity:0, y:5}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-5}} transition={{duration:0.15}}>
+            {activeTab === 'inicio' && <InicioTab currentUser={currentUser} routines={routines} prs={prs} t={t} />}
+            {activeTab === 'rutinas' && <RutinasTab currentUser={currentUser} routines={routines} ejerciciosLista={ejerciciosLista} setEjerciciosLista={setEjerciciosLista} setCurrentUser={setCurrentUser} t={t} />}
+            {activeTab === 'analytics' && <AnalyticsTab prs={prs} currentUser={currentUser} usersDb={usersDb} t={t} theme={theme} />}
+            {activeTab === 'perfil' && <PerfilTab currentUser={currentUser} t={t} />}
+            {activeTab === 'grupos' && <GruposTab currentUser={currentUser} usersDb={usersDb} t={t} />}
           </motion.div>
         </AnimatePresence>
       </main>
