@@ -1,0 +1,75 @@
+rules_version = '2';
+
+// Sin reglas, el original permitía que cualquier usuario autenticado (o anónimo, según la config)
+// borrara/editara rutinas y registros ajenos, y leyera los emails de todos.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function validUsername(name) {
+      return name is string && name.size() >= 2 && name.size() <= 24;
+    }
+
+    // Privado: email y rutina activa.
+    match /users/{uid} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // Público dentro de la app: nombre visible y sexo (mapa corporal).
+    match /profiles/{uid} {
+      allow read: if signedIn();
+      allow create, update: if isOwner(uid)
+        && validUsername(request.resource.data.username)
+        && request.resource.data.gender in ['masculino', 'femenino'];
+      allow delete: if false;
+    }
+
+    match /routines/{routineId} {
+      allow read: if signedIn(); // Necesario para importar rutinas compartidas por enlace
+      allow create: if signedIn()
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 60;
+      allow update: if signedIn()
+        && resource.data.authorId == request.auth.uid
+        && request.resource.data.authorId == request.auth.uid;
+      allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
+    }
+
+    function validLog(d) {
+      return d.userId == request.auth.uid
+        && d.exercise is string && d.exercise.size() > 0 && d.exercise.size() <= 60
+        && d.sets is int && d.sets >= 1 && d.sets <= 30
+        && (d.reps == null || (d.reps is int && d.reps >= 1 && d.reps <= 100))
+        && (d.weight == null || (d.weight is number && d.weight >= 0 && d.weight <= 1000))
+        && d.performedAt is timestamp
+        && d.performedAt < request.time + duration.value(10, 'm'); // Sin fechas futuras
+    }
+
+    // Inmutables: corregir = borrar y volver a registrar (historial auditable para el ranking).
+    match /workoutLogs/{logId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && validLog(request.resource.data);
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    match /personalBests/{uid} {
+      allow read: if signedIn();
+      allow write: if isOwner(uid);
+    }
+
+    // Colección legada: solo lectura hasta completar la migración, luego eliminar.
+    match /prs/{docId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+  }
+}
