@@ -11,3 +11,11 @@ export const MAP_MODES = Object.freeze([
 
 // Días a partir de los cuales el músculo se pinta rojo pleno (estado crítico).
 export const CRITICAL_RECENCY_DAYS = 30;
+
+export const DATE_PRESETS = Object.freeze([
+  { value: 'week', label: 'Última semana' },
+  { value: '30d', label: 'Últimos 30 días' },
+  { value: '90d', label: 'Últimos 90 días' },
+  { value: 'year', label: 'Este año' },
+  { value: 'custom', label: 'Personalizado' },
+]);

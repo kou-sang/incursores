@@ -32,15 +32,35 @@ service cloud.firestore {
     }
 
     match /routines/{routineId} {
-      allow read: if signedIn(); // Necesario para importar rutinas compartidas por enlace
+      allow read: if signedIn(); // Necesario para importar rutinas compartidas por enlace o por el chat del grupo
       allow create: if signedIn()
         && request.resource.data.authorId == request.auth.uid
         && request.resource.data.name is string
-        && request.resource.data.name.size() <= 60;
-      allow update: if signedIn()
-        && resource.data.authorId == request.auth.uid
-        && request.resource.data.authorId == request.auth.uid;
+        && request.resource.data.name.size() <= 60
+        && request.resource.data.get('copyCount', 0) == 0; // Nadie puede arrancar con copias falsas
+      allow update: if signedIn() && (
+        // El autor edita su rutina, pero no puede tocar el contador de copias.
+        (resource.data.authorId == request.auth.uid
+          && request.resource.data.authorId == request.auth.uid
+          && request.resource.data.get('copyCount', 0) == resource.data.get('copyCount', 0))
+        // Otra persona solo puede sumar +1 a copyCount, y una única vez: debe crear su marca en copies/{uid} en el mismo lote.
+        || (resource.data.authorId != request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['copyCount'])
+          && request.resource.data.copyCount == resource.data.get('copyCount', 0) + 1
+          && !exists(/databases/$(database)/documents/routines/$(routineId)/copies/$(request.auth.uid))
+          && existsAfter(/databases/$(database)/documents/routines/$(routineId)/copies/$(request.auth.uid)))
+      );
       allow delete: if signedIn() && resource.data.authorId == request.auth.uid;
+
+      // Marca "esta persona ya copió la rutina" (evita sumar dos veces a la misma persona).
+      match /copies/{uid} {
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid)
+          && request.resource.data.keys().hasOnly(['createdAt'])
+          && request.resource.data.createdAt == request.time
+          && get(/databases/$(database)/documents/routines/$(routineId)).data.authorId != uid;
+        allow update, delete: if false;
+      }
     }
 
     function validLog(d) {
@@ -109,6 +129,64 @@ service cloud.firestore {
       );
 
       allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // ───────── Chat del grupo ─────────
+    // Solo se pueden compartir rutinas (sin texto libre) y máximo 1 mensaje por minuto por persona.
+    // El minuto se controla con groups/{groupId}/chatState/{uid}.lastSentAt, que se escribe en el mismo lote que el mensaje.
+    function isGroupMember(groupId) {
+      return signedIn()
+        && request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.memberIds;
+    }
+
+    function chatStatePath(groupId) {
+      return /databases/$(database)/documents/groups/$(groupId)/chatState/$(request.auth.uid);
+    }
+
+    function chatCooldownElapsed(groupId) {
+      return !exists(chatStatePath(groupId))
+        || request.time >= get(chatStatePath(groupId)).data.lastSentAt + duration.value(60, 's');
+    }
+
+    function validRoutineMessage(d) {
+      return d.keys().hasOnly(['type', 'authorId', 'authorName', 'routineId', 'routineName', 'exerciseCount', 'activeDays', 'createdAt', 'expiresAt'])
+        && d.type == 'routine'
+        && d.authorId == request.auth.uid
+        && d.authorName is string && d.authorName.size() <= 24
+        && d.routineId is string && d.routineId.size() > 0 && d.routineId.size() <= 40
+        && d.routineName is string && d.routineName.size() >= 1 && d.routineName.size() <= 60
+        && d.exerciseCount is int && d.exerciseCount >= 0 && d.exerciseCount <= 500
+        && d.activeDays is int && d.activeDays >= 0 && d.activeDays <= 7
+        && d.createdAt == request.time
+        && d.expiresAt is timestamp;
+    }
+
+    match /groups/{groupId}/messages/{messageId} {
+      allow read: if isGroupMember(groupId);
+      allow create: if isGroupMember(groupId)
+        && validRoutineMessage(request.resource.data)
+        && chatCooldownElapsed(groupId)
+        && getAfter(chatStatePath(groupId)).data.lastSentAt == request.time;
+      allow update: if false;
+      // Borra el autor o el administrador del grupo (moderación).
+      allow delete: if signedIn() && (
+        resource.data.authorId == request.auth.uid
+        || get(/databases/$(database)/documents/groups/$(groupId)).data.ownerId == request.auth.uid
+      );
+    }
+
+    match /groups/{groupId}/chatState/{uid} {
+      allow read: if isOwner(uid) && isGroupMember(groupId);
+      allow create: if isOwner(uid) && isGroupMember(groupId)
+        && request.resource.data.keys().hasOnly(['lastSentAt'])
+        && request.resource.data.lastSentAt == request.time;
+      allow update: if isOwner(uid) && isGroupMember(groupId)
+        && request.resource.data.keys().hasOnly(['lastSentAt'])
+        && request.resource.data.lastSentAt == request.time
+        && request.time >= resource.data.lastSentAt + duration.value(60, 's');
+      // Los miembros no pueden borrarlo (se saltarían el límite); solo el administrador al eliminar el grupo.
+      allow delete: if signedIn()
+        && get(/databases/$(database)/documents/groups/$(groupId)).data.ownerId == request.auth.uid;
     }
 
     // Índice código → grupo. 'get' puntual permitido (hace falta conocer el código); 'list' prohibido (sin enumeración).

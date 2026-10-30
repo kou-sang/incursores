@@ -1,6 +1,7 @@
 import { ArrowLeft, History, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExercisePicker } from '../../components/ExercisePicker';
+import { RepsInput } from '../../components/RepsInput';
 import { IconButton, InlineSpinner } from '../../components/ui';
 import { getExerciseMeta, inferExerciseMeta, MUSCLE_LABELS, resolveMuscle } from '../../constants/exercises';
 import { useAppData } from '../../context/AppDataContext';
@@ -36,7 +37,7 @@ const InferredMuscleHint = ({ exercise }) => {
   );
 };
 
-// Campos de un ejercicio. Series, reps y kg son opcionales (placeholders = valores por defecto).
+// Campos de un ejercicio. Series y reps son opcionales (placeholders = valores por defecto). El peso se registra al entrenar.
 const RoutineItemFields = ({ item, extraNames, layout, onChange, onRemove }) => {
   const isDesktop = layout === 'desktop';
   const compact = isDesktop ? 'min-h-[38px] px-2 py-1.5 text-sm' : '';
@@ -49,13 +50,11 @@ const RoutineItemFields = ({ item, extraNames, layout, onChange, onRemove }) => 
         </div>
         <IconButton label={`Quitar ${item.exercise || 'ejercicio'}`} icon={Trash2} tone="danger" size={isDesktop ? 16 : 18} onClick={onRemove} />
       </div>
-      <div className="grid grid-cols-3 gap-1.5">
+      <div className="grid grid-cols-2 gap-1.5">
         <input aria-label="Series (opcional)" title="Series (opcional, por defecto 3)" className={`input ${compact}`} type="number" inputMode="numeric" min="1" max="20"
           placeholder={isDesktop ? String(ROUTINE_DEFAULTS.sets) : `${ROUTINE_DEFAULTS.sets} series`} value={item.sets} onChange={(event) => onChange({ sets: event.target.value })} />
-        <input aria-label="Repeticiones (opcional)" title="Repeticiones (opcional, por defecto 10)" className={`input ${compact}`} maxLength={12}
-          placeholder={isDesktop ? ROUTINE_DEFAULTS.reps : `${ROUTINE_DEFAULTS.reps} reps`} value={item.reps} onChange={(event) => onChange({ reps: event.target.value })} />
-        <input aria-label="Kilos (opcional)" title="Kilos objetivo (opcional)" className={`input ${compact}`} type="number" inputMode="decimal" min="0" step="0.5"
-          placeholder="kg" value={item.weight ?? ''} onChange={(event) => onChange({ weight: event.target.value })} />
+        <RepsInput aria-label="Repeticiones (opcional)" title="Repeticiones (opcional, por defecto 10)" className={compact} maxLength={12}
+          placeholder={isDesktop ? ROUTINE_DEFAULTS.reps : `${ROUTINE_DEFAULTS.reps} reps`} value={item.reps} onChange={(reps) => onChange({ reps })} />
       </div>
       <InferredMuscleHint exercise={item.exercise} />
     </div>
@@ -241,7 +240,7 @@ export const RoutineEditor = ({ original, initialDraft, wasRestored, exerciseOpt
         onChange={(event) => setDraft((previous) => ({ ...previous, name: event.target.value }))}
       />
       <p className="mb-5 text-xs text-muted">
-        Series, repeticiones y kg son opcionales (por defecto {ROUTINE_DEFAULTS.sets} × {ROUTINE_DEFAULTS.reps}). Los músculos se asignan solos.
+        Series y repeticiones son opcionales (por defecto {ROUTINE_DEFAULTS.sets} × {ROUTINE_DEFAULTS.reps}). Los músculos se asignan solos.
       </p>
 
       {isDesktop ? <WeekGridLayout {...layoutProps} /> : <DayListLayout {...layoutProps} />}

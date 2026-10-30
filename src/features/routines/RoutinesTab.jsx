@@ -1,4 +1,4 @@
-import { CalendarDays, Copy, Pencil, Plus, Share2, Trash2 } from 'lucide-react';
+import { CalendarDays, Copy, Pencil, Plus, Share2, Trash2, Users } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { EmptyState, IconButton, LoadingState } from '../../components/ui';
 import { CATALOG_EXERCISE_NAMES, canonicalExerciseName } from '../../constants/exercises';
@@ -127,6 +127,10 @@ export const RoutinesTab = () => {
                 {isActive && <span className="badge badge-accent absolute right-3 top-3">Activa</span>}
                 <h3 className="pr-16 text-base font-bold md:text-lg">{routine.name}</h3>
                 <p className="text-sm text-secondary">{totalExercises} ejercicios por semana</p>
+                <p className="mt-0.5 flex items-center gap-1.5 text-xs font-semibold text-muted" title="Personas distintas que importaron esta rutina">
+                  <Users size={13} aria-hidden />
+                  {routine.copyCount === 0 ? 'Todavía nadie la copió' : `Copiada por ${routine.copyCount} ${routine.copyCount === 1 ? 'persona' : 'personas'}`}
+                </p>
 
                 {/* Vista de la semana: qué días tienen entrenamiento, de un vistazo. */}
                 <div className="mt-3 flex gap-1" aria-label="Días con entrenamiento">
