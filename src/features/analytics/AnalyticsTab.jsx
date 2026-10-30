@@ -34,7 +34,6 @@ import { WeeklyVolumeChart } from './WeeklyVolumeChart';
 const MAX_COMPARED_USERS = 8;
 const AGGREGATE_FOCUS = 'aggregate';
 const LONG_RANGE_DAYS = 120;
-const GENDER_OPTIONS = [{ value: 'masculino', label: 'Masculino' }, { value: 'femenino', label: 'Femenino' }];
 
 const formatTonnage = (value) => (value >= 1000 ? `${(value / 1000).toFixed(1)} t` : `${Math.round(value)} kg`);
 
@@ -275,6 +274,13 @@ export const AnalyticsTab = () => {
             </div>
           )}
 
+          <SectionCard
+            title="Consistencia"
+            subtitle="Ejercicios acumulados por perfil en el período, con tus filtros de categoría y músculo"
+          >
+            <ConsistencyChart seriesList={consistencySeries} domain={consistencyDomain} unifyDays={unifyDays} />
+          </SectionCard>
+
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatTile icon={CalendarDays} label="Días entrenados" value={focusMetrics.trainingDays} hint={`${focusName} · en el rango`} />
             <StatTile icon={Dumbbell} label="Tonelaje / semana" value={formatTonnage(focusMetrics.tonnagePerWeek)} hint="promedio en el rango" />
@@ -283,19 +289,11 @@ export const AnalyticsTab = () => {
           </div>
 
           <SectionCard
-            title="Consistencia"
-            subtitle="Ejercicios acumulados por perfil en el período, con tus filtros de categoría y músculo"
-          >
-            <ConsistencyChart seriesList={consistencySeries} domain={consistencyDomain} unifyDays={unifyDays} />
-          </SectionCard>
-
-          <SectionCard
             title="Mapa muscular"
             subtitle={`${focusName} · ${mapMode === 'stimulus' ? 'más verde = más series efectivas por semana' : 'verde = entrenado hace poco · rojo = un mes o más sin entrenar'}`}
             actions={
               <div className="flex flex-wrap gap-2">
                 <SegmentedControl label="Modo del mapa" options={MAP_MODES} value={mapMode} onChange={setMapMode} />
-                <SegmentedControl label="Cuerpo" options={GENDER_OPTIONS} value={mapGender} onChange={setMapGenderChoice} />
               </div>
             }
           >
