@@ -4,16 +4,12 @@ import { playClick } from '../utils/audio';
 export const BRAND_NAME = 'Colossus';
 
 /*
- * Isotipo de Colossus: una "C" grande que contiene otra "C" más chica (crecer, sumar peso).
- * Misma geometría que public/favicon.svg (fuente: public/brand/colossus-mark.svg).
- * La "C" grande usa el color del texto y la interior el acento del tema.
+ * Isotipo de Colossus: una "C" sólida. Misma geometría que public/favicon.svg (fuente: public/brand/colossus-mark.svg).
+ * Usa el color del texto: blanca en modo oscuro y oscura en modo claro, para que se lea sobre cualquier fondo.
  */
 export const LogoMark = ({ size = 24, className = '' }) => (
   <svg viewBox="0 0 512 512" width={size} height={size} className={className} aria-hidden focusable="false">
-    <g transform="translate(14 0)">
-      <path d="M369.4 351.1A148 148 0 1 1 369.4 160.9" fill="none" stroke="currentColor" strokeWidth="88" />
-      <path d="M300.4 293.3A58 58 0 1 1 300.4 218.7" fill="none" stroke="var(--accent)" strokeWidth="44" />
-    </g>
+    <path transform="translate(23 0)" d="M370.9 352.4A150 150 0 1 1 370.9 159.6" fill="none" stroke="currentColor" strokeWidth="90" />
   </svg>
 );
 

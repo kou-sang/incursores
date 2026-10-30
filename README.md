@@ -14,13 +14,14 @@ Las reglas de `firestore.rules` incluyen el contador de copias de rutinas y el c
 Tras cada cambio en ese archivo hay que desplegarlas:
 
 ```bash
-firebase deploy --only firestore:rules
+firebase deploy --only firestore:rules,firestore:indexes
 ```
+
+El ranking de cada grupo usa un índice nuevo (`userId` + `isPr` + `performedAt`) que está en `firestore.indexes.json`; tarda unos minutos en construirse.
 
 Opcional (plan gratuito): en la consola de Firestore, crear una política **TTL** sobre el grupo de colecciones `messages` con el campo `expiresAt` para que los mensajes de más de 30 días se borren solos.
 
 ## Íconos y marca
 
-Los íconos se generan a partir de `public/brand/colossus-icon-dark.svg` (fondo oscuro, apto para Instagram, WhatsApp y Canva) y
-`public/brand/colossus-icon-light.svg` (fondo claro). `public/brand/` también incluye los PNG de 1024 px y el isotipo (`colossus-mark.svg`).
+El ícono es una "C" blanca. `public/favicon.svg` y los PNG de 192/512 tienen fondo transparente. En `public/brand/` hay versiones con fondo oscuro y claro (SVG y PNG de 1024 px, aptas para Instagram, WhatsApp y Canva), una transparente y el isotipo (`colossus-mark.svg`). El ícono de iOS (`apple-touch-icon.png`) y el maskable llevan fondo oscuro porque esas plataformas no admiten transparencia.
 Para que las vistas previas de enlaces (WhatsApp, Instagram) muestren `og-image.png`, conviene que la URL de `og:image` en `index.html` sea absoluta (con el dominio de Vercel).

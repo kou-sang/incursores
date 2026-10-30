@@ -1,4 +1,4 @@
-import { Copy, Crown, LogIn, LogOut, MessageSquare, Pencil, Plus, RefreshCw, Settings, Share2, Trash2, UserMinus, Users, X } from 'lucide-react';
+import { Copy, Crown, LogIn, LogOut, MessageSquare, Pencil, Plus, RefreshCw, Settings, Share2, Trash2, Trophy, UserMinus, Users, X } from 'lucide-react';
 import { useState } from 'react';
 import { EmptyState, FieldLabel, IconButton, InlineSpinner, LoadingState, SectionCard } from '../../components/ui';
 import { GROUP_LIMITS } from '../../constants/collections';
@@ -20,6 +20,7 @@ import {
 import { playClick } from '../../utils/audio';
 import { logError, toUserMessage } from '../../utils/errors';
 import { GroupChat } from './GroupChat';
+import { GroupRanking } from './GroupRanking';
 
 // Envoltorio común de acciones: estado ocupado + toasts + log de errores.
 const useAsyncAction = () => {
@@ -153,6 +154,7 @@ const GroupCard = ({ group }) => {
   const { busyKey, run } = useAsyncAction();
   const [isEditing, setIsEditing] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isRankingOpen, setIsRankingOpen] = useState(false);
   const isOwner = group.ownerId === user.id;
   const isBusy = Boolean(busyKey);
 
@@ -210,7 +212,7 @@ const GroupCard = ({ group }) => {
   };
 
   return (
-    <li className="card p-4 md:p-5" aria-busy={isBusy}>
+    <li className={`card p-4 md:p-5 ${isChatOpen || isRankingOpen ? 'md:col-span-2' : ''}`} aria-busy={isBusy}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className="flex items-center gap-2 text-base font-bold md:text-lg">
@@ -236,9 +238,15 @@ const GroupCard = ({ group }) => {
         </div>
       </div>
 
-      <button type="button" className="btn btn-ghost mt-3 w-full" aria-expanded={isChatOpen} onClick={() => { playClick(); setIsChatOpen((open) => !open); }}>
-        <MessageSquare size={16} aria-hidden /> {isChatOpen ? 'Ocultar chat de rutinas' : 'Chat de rutinas'}
-      </button>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button type="button" className="btn btn-ghost" aria-expanded={isRankingOpen} onClick={() => { playClick(); setIsRankingOpen((open) => !open); }}>
+          <Trophy size={16} aria-hidden /> {isRankingOpen ? 'Ocultar ranking' : 'Ranking'}
+        </button>
+        <button type="button" className="btn btn-ghost" aria-expanded={isChatOpen} onClick={() => { playClick(); setIsChatOpen((open) => !open); }}>
+          <MessageSquare size={16} aria-hidden /> {isChatOpen ? 'Ocultar chat' : 'Chat de rutinas'}
+        </button>
+      </div>
+      {isRankingOpen && <GroupRanking group={group} />}
       {isChatOpen && <GroupChat group={group} isAdmin={isOwner} />}
 
       <ul className="mt-3 divide-y divide-[var(--border)]">
@@ -286,7 +294,7 @@ export const GroupsTab = () => {
   return (
     <div className="space-y-4">
       <p className="text-sm text-secondary">
-        Solo los perfiles que comparten un grupo contigo aparecen en <strong>Analíticas</strong>. Invita amigos con el código o el enlace y comparte rutinas en el chat.
+        Solo los perfiles que comparten un grupo contigo aparecen en <strong>Analíticas</strong>. Invita amigos con el código o el enlace y compite en el ranking y comparte rutinas en el chat.
       </p>
       <CreateOrJoinPanel />
       {groupsError && (
