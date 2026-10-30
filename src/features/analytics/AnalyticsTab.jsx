@@ -264,6 +264,13 @@ export const AnalyticsTab = () => {
         />
       ) : (
         <>
+          <SectionCard
+            title="Consistencia"
+            subtitle="Ejercicios acumulados por perfil en el período, con tus filtros de categoría y músculo"
+          >
+            <ConsistencyChart seriesList={consistencySeries} domain={consistencyDomain} unifyDays={unifyDays} />
+          </SectionCard>
+
           {effectiveUserIds.length > 1 && (
             <div className="flex flex-wrap items-center gap-2">
               <label htmlFor="focus-user" className="text-sm font-semibold text-secondary">Mapa e indicadores de:</label>
@@ -273,13 +280,6 @@ export const AnalyticsTab = () => {
               </select>
             </div>
           )}
-
-          <SectionCard
-            title="Consistencia"
-            subtitle="Ejercicios acumulados por perfil en el período, con tus filtros de categoría y músculo"
-          >
-            <ConsistencyChart seriesList={consistencySeries} domain={consistencyDomain} unifyDays={unifyDays} />
-          </SectionCard>
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatTile icon={CalendarDays} label="Días entrenados" value={focusMetrics.trainingDays} hint={`${focusName} · en el rango`} />
