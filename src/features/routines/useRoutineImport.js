@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useFeedback } from '../../context/FeedbackContext';
-import { duplicateRoutine, fetchRoutine } from '../../services/routineService';
+import { fetchRoutine, importSharedRoutine } from '../../services/routineService';
 import { logError, toUserMessage } from '../../utils/errors';
 
 const SHARE_PARAM = 'shareRoutine';
@@ -39,7 +39,7 @@ export const useRoutineImport = (user, onImported) => {
           confirmLabel: 'Importar',
         });
         if (!accepted) return;
-        await duplicateRoutine(routine, user, '(Importada)');
+        await importSharedRoutine(routine, user);
         notify(`"${routine.name}" importada`, 'success');
         onImported?.();
       } catch (importError) {

@@ -24,24 +24,81 @@ export const computeTonnage = ({ sets, reps, weight }) => {
 
 export const filterByUser = (logs, userId) => logs.filter((log) => log.userId === userId);
 
-// Mejor 1RM estimado por día para un usuario + ejercicio (serie temporal de progresión).
-export const buildStrengthSeries = (logs, userId, exercise) => {
+// Serie temporal de progresión de un usuario + ejercicio.
+// unifyDays=true (por defecto): mejor 1RM estimado de cada día. unifyDays=false: un punto por registro, con su hora exacta.
+export const buildStrengthSeries = (logs, userId, exercise, { unifyDays = true } = {}) => {
+  const toPoint = (log) => ({
+    time: log.performedAt.getTime(),
+    e1rm: log.e1rm,
+    weight: log.weight,
+    reps: log.reps,
+    isPr: Boolean(log.isPr),
+  });
+  const candidates = logs.filter((log) => log.userId === userId && log.exercise === exercise && log.e1rm);
+
+  if (!unifyDays) return candidates.map(toPoint).sort((a, b) => a.time - b.time);
+
   const bestByDay = new Map();
-  logs.forEach((log) => {
-    if (log.userId !== userId || log.exercise !== exercise || !log.e1rm) return;
+  candidates.forEach((log) => {
     const dayKey = toDateKey(log.performedAt);
     const current = bestByDay.get(dayKey);
-    if (!current || log.e1rm > current.e1rm) {
-      bestByDay.set(dayKey, {
-        time: log.performedAt.getTime(),
-        e1rm: log.e1rm,
-        weight: log.weight,
-        reps: log.reps,
-        isPr: Boolean(log.isPr),
-      });
-    }
+    if (!current || log.e1rm > current.e1rm) bestByDay.set(dayKey, toPoint(log));
   });
   return [...bestByDay.values()].sort((a, b) => a.time - b.time);
+};
+
+/**
+ * Consistencia de un usuario: ejercicios acumulados a lo largo del tiempo (cada registro = 1 ejercicio).
+ * Una pendiente alta es constancia; una línea plana, días sin entrenar. Marca los momentos con mejora de PR.
+ *  - unifyDays=true: un punto por día (hora del último ejercicio de ese día).
+ *  - unifyDays=false: un punto por ejercicio, con su hora exacta.
+ * Los logs ya vienen filtrados por rango, categoría y músculo.
+ */
+export const buildConsistencySeries = (logs, userId, { unifyDays = true } = {}) => {
+  const userLogs = logs.filter((log) => log.userId === userId).sort((a, b) => a.performedAt - b.performedAt);
+  const points = [];
+  let total = 0;
+
+  if (unifyDays) {
+    const byDay = new Map();
+    userLogs.forEach((log) => {
+      const dayKey = toDateKey(log.performedAt);
+      const day = byDay.get(dayKey) ?? { dayKey, time: 0, count: 0, sets: 0, hasPr: false, prExercises: [] };
+      day.count += 1;
+      day.sets += Number.isFinite(log.sets) ? log.sets : 0;
+      day.time = Math.max(day.time, log.performedAt.getTime());
+      if (log.isPr) {
+        day.hasPr = true;
+        day.prExercises.push(log.exercise);
+      }
+      byDay.set(dayKey, day);
+    });
+    [...byDay.values()].sort((a, b) => a.time - b.time).forEach((day) => {
+      total += day.count;
+      points.push({ ...day, total });
+    });
+  } else {
+    userLogs.forEach((log) => {
+      total += 1;
+      points.push({
+        dayKey: toDateKey(log.performedAt),
+        time: log.performedAt.getTime(),
+        count: 1,
+        sets: Number.isFinite(log.sets) ? log.sets : 0,
+        hasPr: Boolean(log.isPr),
+        prExercises: log.isPr ? [log.exercise] : [],
+        exercise: log.exercise,
+        total,
+      });
+    });
+  }
+
+  return {
+    points,
+    total,
+    trainingDays: new Set(userLogs.map((log) => toDateKey(log.performedAt))).size,
+    prCount: userLogs.filter((log) => log.isPr).length,
+  };
 };
 
 // Tonelaje semanal por usuario. Devuelve filas { weekKey, [userId]: kg } listas para Recharts.

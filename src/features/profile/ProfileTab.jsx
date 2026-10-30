@@ -1,5 +1,6 @@
 import { AlertTriangle, KeyRound, Mail, Moon, Palette, RotateCcw, Save, Sun, UserRound } from 'lucide-react';
 import { useState } from 'react';
+import { version as APP_VERSION } from '../../../package.json';
 import { FieldLabel, InlineSpinner, SectionCard, SegmentedControl } from '../../components/ui';
 import { useAppData } from '../../context/AppDataContext';
 import { useFeedback } from '../../context/FeedbackContext';
@@ -278,13 +279,27 @@ const AppearanceSection = () => {
   );
 };
 
+// Versión vigente (fuente única: package.json, ver CHANGELOG.md).
+const AppVersion = () => (
+  <p className="text-center text-xs font-semibold text-muted lg:col-span-2" data-testid="app-version">
+    Colossus v{APP_VERSION}
+  </p>
+);
+
+/*
+ * Columnas con minmax(0, 1fr) y min-w-0: una columna `auto` crece hasta el min-content de sus hijos
+ * (p. ej. los botones sin salto de línea del selector de modo) y estiraba la página más que la pantalla en el celular.
+ */
 export const ProfileTab = () => (
-  <div className="grid gap-4 md:gap-6 lg:grid-cols-2">
-    <div className="space-y-4 md:space-y-6">
+  <div className="grid grid-cols-[minmax(0,1fr)] gap-4 md:gap-6 lg:grid-cols-[repeat(2,minmax(0,1fr))]">
+    <div className="min-w-0 space-y-4 md:space-y-6">
       <ProfileDataSection />
       <EmailSection />
       <PasswordSection />
     </div>
-    <AppearanceSection />
+    <div className="min-w-0">
+      <AppearanceSection />
+    </div>
+    <AppVersion />
   </div>
 );

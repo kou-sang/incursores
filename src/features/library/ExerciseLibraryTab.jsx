@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowLeft, Camera, Lightbulb, ListOrdered, PlayCircle, Search, Shuffle } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Camera, Lightbulb, ListOrdered, PlayCircle, Plus, Search, Shuffle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { EmptyState, SectionCard } from '../../components/ui';
 import { CATEGORIES, CATEGORY_LABELS, EXERCISE_CATALOG, MUSCLE_LABELS, searchExercises } from '../../constants/exercises';
@@ -6,6 +6,7 @@ import { getExerciseContent } from '../../constants/exerciseContent';
 import { useTheme } from '../../context/ThemeContext';
 import { DESKTOP_QUERY, useMediaQuery } from '../../hooks/useMediaQuery';
 import { playClick } from '../../utils/audio';
+import { AddToRoutineDialog } from './AddToRoutineDialog';
 
 const MAX_ALTERNATIVES = 6;
 
@@ -69,6 +70,7 @@ const ExerciseList = ({ query, onQueryChange, category, onCategoryChange, select
 
 const ExerciseDetail = ({ exercise, onBack, onSelect }) => {
   const { chart } = useTheme();
+  const [isAdding, setIsAdding] = useState(false);
   const content = getExerciseContent(exercise.name);
   const muscles = Object.entries(exercise.distribution).sort((a, b) => b[1] - a[1]);
   const alternatives = findAlternatives(exercise);
@@ -84,7 +86,11 @@ const ExerciseDetail = ({ exercise, onBack, onSelect }) => {
         {exercise.aliases.length > 0 && (
           <p className="mt-1 text-sm text-secondary">También conocido como: {exercise.aliases.slice(0, 4).join(' · ')}</p>
         )}
+        <button type="button" className="btn btn-primary mt-3" onClick={() => { playClick(); setIsAdding(true); }}>
+          <Plus size={16} aria-hidden /> Añadir a rutina
+        </button>
       </header>
+      {isAdding && <AddToRoutineDialog exerciseName={exercise.name} onClose={() => setIsAdding(false)} />}
 
       <SectionCard title="Músculos que trabaja" subtitle="Porcentaje del estímulo de cada serie (alimenta el mapa de Analíticas)">
         <ul className="space-y-2">

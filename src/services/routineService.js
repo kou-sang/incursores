@@ -2,18 +2,22 @@ import {
   addDoc,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
+  increment,
   onSnapshot,
   query,
   serverTimestamp,
   setDoc,
+  updateDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { COLLECTIONS } from '../constants/collections';
 import { WEEK_DAYS } from '../utils/dates';
-import { ValidationError } from '../utils/errors';
+import { logError, ValidationError } from '../utils/errors';
 import { sanitizeRoutineItem } from './validation';
 
 const createItemId = () =>
@@ -51,6 +55,9 @@ export const normalizeRoutine = (id, data) => {
     authorId: data.authorId,
     authorName: data.authorName ?? '',
     createdAt: data.createdAt ?? null,
+    // Personas distintas que importaron esta rutina (lo mantienen las reglas: +1 por persona).
+    copyCount: Number.isFinite(data.copyCount) ? data.copyCount : 0,
+    copiedFrom: data.copiedFrom ?? null,
     days,
   };
 };
@@ -86,20 +93,74 @@ const buildRoutinePayload = (routine, owner) => {
 export const saveRoutine = async (routine, owner) => {
   const payload = buildRoutinePayload(routine, owner);
   if (routine.id) {
-    // setDoc sin merge reemplaza el doc → elimina el campo legado 'exercises'.
-    await setDoc(doc(db, COLLECTIONS.ROUTINES, routine.id), {
-      ...payload,
-      createdAt: routine.createdAt ?? serverTimestamp(),
-    });
+    const routineRef = doc(db, COLLECTIONS.ROUTINES, routine.id);
+    try {
+      // updateDoc (no setDoc): conserva `copyCount`, que otras personas incrementan y el autor no puede modificar.
+      // `exercises: deleteField()` elimina el campo del esquema legado.
+      await updateDoc(routineRef, { ...payload, exercises: deleteField() });
+    } catch (updateError) {
+      if (updateError?.code !== 'not-found') throw updateError;
+      // La rutina fue eliminada mientras se editaba: se vuelve a crear con el mismo id.
+      await setDoc(routineRef, { ...payload, createdAt: routine.createdAt ?? serverTimestamp() });
+    }
     return routine.id;
   }
-  const created = await addDoc(collection(db, COLLECTIONS.ROUTINES), { ...payload, createdAt: serverTimestamp() });
+  const created = await addDoc(collection(db, COLLECTIONS.ROUTINES), {
+    ...payload,
+    ...(routine.copiedFrom ? { copiedFrom: routine.copiedFrom } : {}),
+    createdAt: serverTimestamp(),
+  });
   return created.id;
 };
 
 export const duplicateRoutine = async (routine, owner, suffix = '(Copia)') => {
-  const copy = { ...routine, id: null, createdAt: null, name: `${routine.name} ${suffix}`.slice(0, 60) };
+  // Duplicar una rutina propia no cuenta como "copia" en la estadística (solo importar la de otra persona).
+  const copy = { ...routine, id: null, createdAt: null, copiedFrom: null, name: `${routine.name} ${suffix}`.slice(0, 60) };
   return saveRoutine(copy, owner);
+};
+
+/**
+ * Suma 1 a `copyCount` de la rutina original, una sola vez por persona.
+ * El doc routines/{id}/copies/{uid} actúa de "marca": las reglas solo permiten el +1 si esa marca se crea
+ * en el mismo lote, así nadie puede inflar la cifra repitiendo la acción. Devuelve true si sumó.
+ */
+export const registerRoutineCopy = async (routineId, uid) => {
+  const copyRef = doc(db, COLLECTIONS.ROUTINES, routineId, 'copies', uid);
+  if ((await getDoc(copyRef)).exists()) return false;
+  const batch = writeBatch(db);
+  batch.set(copyRef, { createdAt: serverTimestamp() });
+  batch.update(doc(db, COLLECTIONS.ROUTINES, routineId), { copyCount: increment(1) });
+  await batch.commit();
+  return true;
+};
+
+/**
+ * Importa la rutina de otra persona (enlace o chat de grupo) y registra la copia.
+ * La estadística es secundaria: si falla (reglas sin desplegar, sin conexión) la importación igual se concluye.
+ */
+export const importSharedRoutine = async (source, owner) => {
+  const copy = { ...source, id: null, createdAt: null, copiedFrom: source.id, name: `${source.name} (Importada)`.slice(0, 60) };
+  const newId = await saveRoutine(copy, owner);
+  let counted = false;
+  if (source.authorId && source.authorId !== owner.id) {
+    try {
+      counted = await registerRoutineCopy(source.id, owner.id);
+    } catch (countError) {
+      logError('routine:count-copy', countError);
+    }
+  }
+  return { id: newId, counted };
+};
+
+/**
+ * Agrega un ejercicio al final de un día de una rutina existente (usado desde la pestaña Ejercicios).
+ * Series y repeticiones vacías toman los valores por defecto (3 × 10).
+ */
+export const addExerciseToRoutine = async (routine, { day, exercise, sets, reps }, owner) => {
+  if (!WEEK_DAYS.includes(day)) throw new ValidationError('Elige un día válido.');
+  const newItem = { ...createEmptyRoutineItem(), exercise, sets, reps };
+  const days = { ...routine.days, [day]: [...(routine.days[day] ?? []), newItem] };
+  return saveRoutine({ ...routine, days }, owner);
 };
 
 export const fetchRoutine = async (routineId) => {

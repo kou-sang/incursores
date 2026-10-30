@@ -16,6 +16,14 @@ export const GROUP_LIMITS = Object.freeze({
   DESCRIPTION_MAX: 160,
 });
 
+// Chat de grupo: solo rutinas compartidas, sin texto libre. Límites pensados para la cuota gratuita de Firestore.
+export const CHAT_LIMITS = Object.freeze({
+  COOLDOWN_MS: 60_000, // 1 mensaje por minuto por persona (también lo exigen las reglas)
+  MAX_MESSAGES: 50, // Mensajes que se descargan al abrir el chat
+  TTL_DAYS: 30, // `expiresAt` permite activar una política TTL en la consola para limpiar mensajes viejos
+  DELETE_ON_GROUP_REMOVAL: 400, // Tope de mensajes borrados en el mismo lote al eliminar el grupo (límite del lote: 500)
+});
+
 export const GENDERS = Object.freeze(['masculino', 'femenino']);
 
 // Límites de lectura: cada documento de un onSnapshot inicial se factura como 1 lectura.

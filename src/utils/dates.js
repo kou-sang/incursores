@@ -86,6 +86,21 @@ export const formatLongDate = (value) => {
   return date ? longDateFormatter.format(date) : '—';
 };
 
+const timeFormatter = new Intl.DateTimeFormat('es', { hour: '2-digit', minute: '2-digit', hour12: false });
+const dayTimeFormatter = new Intl.DateTimeFormat('es', { weekday: 'short', day: 'numeric', month: 'short' });
+
+// "18:45"
+export const formatTime = (value) => {
+  const date = toJsDate(value);
+  return date ? timeFormatter.format(date) : '—';
+};
+
+// "vie 30 oct, 18:45"
+export const formatDayTime = (value) => {
+  const date = toJsDate(value);
+  return date ? `${dayTimeFormatter.format(date).replace(',', '')}, ${timeFormatter.format(date)}` : '—';
+};
+
 export const formatRelativeDays = (days) => {
   if (days === null || days === undefined) return 'Nunca';
   if (days <= 0) return 'Hoy';

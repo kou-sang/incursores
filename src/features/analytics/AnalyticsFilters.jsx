@@ -2,14 +2,7 @@ import { ChevronDown } from 'lucide-react';
 import { FieldLabel, SegmentedControl } from '../../components/ui';
 import { CATEGORIES, musclesOfCategory } from '../../constants/muscles';
 import { playClick } from '../../utils/audio';
-
-const DATE_PRESETS = Object.freeze([
-  { value: 'week', label: 'Última semana' },
-  { value: '30d', label: 'Últimos 30 días' },
-  { value: '90d', label: 'Últimos 90 días' },
-  { value: 'year', label: 'Este año' },
-  { value: 'custom', label: 'Personalizado' },
-]);
+import { DATE_PRESETS } from './analyticsConstants';
 
 /*
  * Multiselección con chip "Todos". `value === null` significa todos.
@@ -78,6 +71,8 @@ export const AnalyticsFilters = ({
   customRange,
   onCustomRangeChange,
   todayKey,
+  unifyDays,
+  onUnifyDaysChange,
 }) => {
   const muscleCount = CATEGORIES.reduce((sum, category) => sum + musclesOfCategory(category.id).length, 0);
   const customInvalid = datePreset === 'custom' && customRange.from && customRange.to && customRange.from > customRange.to;
@@ -115,6 +110,17 @@ export const AnalyticsFilters = ({
             {customInvalid && <p className="col-span-2 text-xs font-semibold text-accent">"Desde" debe ser anterior a "Hasta".</p>}
           </div>
         )}
+        <label className="mt-3 flex cursor-pointer items-start gap-2.5 text-sm">
+          <input type="checkbox" className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--accent)]" checked={unifyDays} onChange={(event) => { playClick(); onUnifyDaysChange(event.target.checked); }} />
+          <span>
+            <span className="font-semibold">Unificar ejercicios del día</span>
+            <span className="block text-xs text-muted">
+              {unifyDays
+                ? 'Un punto por día. Desmárcalo para ver cada ejercicio con su hora y minuto (consistencia y progresión de fuerza).'
+                : 'Un punto por ejercicio, con hora y minuto en el eje X.'}
+            </span>
+          </span>
+        </label>
       </FilterBlock>
 
       <FilterBlock title="Categorías" summary={summarize(categories, CATEGORIES.length, 'categorías')} collapsible>

@@ -1,6 +1,6 @@
-import { CalendarDays, Dumbbell, Flame, Trophy } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronUp, Dumbbell, Flame, Trophy } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { LoadingState, SectionCard, SegmentedControl, StatTile } from '../../components/ui';
+import { IconButton, LoadingState, SectionCard, SegmentedControl, StatTile } from '../../components/ui';
 import { MUSCLE_IDS } from '../../constants/muscles';
 import { useAppData } from '../../context/AppDataContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -8,8 +8,10 @@ import { useSubscription } from '../../hooks/useSubscription';
 import { useToday } from '../../hooks/useToday';
 import { subscribeToLogs } from '../../services/logService';
 import { addDays, diffInCalendarDays, endOfDay, parseDateKey, toDateKey } from '../../utils/dates';
+import { playClick } from '../../utils/audio';
 import { toUserMessage } from '../../utils/errors';
 import {
+  buildConsistencySeries,
   buildEffectiveSetsByMuscle,
   buildMuscleLastTrained,
   buildStrengthSeries,
@@ -20,7 +22,8 @@ import {
   filterLogs,
 } from '../../utils/metrics';
 import { AnalyticsFilters } from './AnalyticsFilters';
-import { CRITICAL_RECENCY_DAYS, MAP_MODES } from './analyticsConstants';
+import { CRITICAL_RECENCY_DAYS, DATE_PRESETS, MAP_MODES } from './analyticsConstants';
+import { ConsistencyChart } from './ConsistencyChart';
 import { MuscleMap } from './MuscleMap';
 import { MuscleDetailPanel } from './MuscleDetailPanel';
 import { MuscleSetsChart } from './MuscleSetsChart';
@@ -70,6 +73,8 @@ export const AnalyticsTab = () => {
   const [mapGenderChoice, setMapGenderChoice] = useState(null);
   const [selectedMuscle, setSelectedMuscle] = useState(null);
   const [selectedExercise, setSelectedExercise] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(true); // Siempre visibles al entrar; se pueden ocultar con la flecha
+  const [unifyDays, setUnifyDays] = useState(true); // false → gráficos temporales con hora y minuto
 
   const activeGroup = scopeChoice === 'self' ? null : groups.find((group) => group.id === scopeChoice) ?? (scopeChoice ? null : groups[0] ?? null);
   const scopeId = activeGroup?.id ?? 'self';
@@ -169,9 +174,14 @@ export const AnalyticsTab = () => {
   const activeExercise = exerciseOptions.includes(selectedExercise) ? selectedExercise : exerciseOptions[0] ?? '';
 
   const strengthSeries = useMemo(
-    () => chartUsers.map((selected) => ({ ...selected, points: buildStrengthSeries(filteredLogs, selected.userId, activeExercise) })),
-    [chartUsers, filteredLogs, activeExercise],
+    () => chartUsers.map((selected) => ({ ...selected, points: buildStrengthSeries(filteredLogs, selected.userId, activeExercise, { unifyDays }) })),
+    [chartUsers, filteredLogs, activeExercise, unifyDays],
   );
+  const consistencySeries = useMemo(
+    () => chartUsers.map((selected) => ({ ...selected, ...buildConsistencySeries(filteredLogs, selected.userId, { unifyDays }) })),
+    [chartUsers, filteredLogs, unifyDays],
+  );
+  const consistencyDomain = useMemo(() => [range.since.getTime(), rangeEnd.getTime()], [range.since, rangeEnd]);
   const weeklyRows = useMemo(
     () => buildWeeklyTonnage(filteredLogs, chartUsers.map(({ userId }) => userId), range.since, rangeEnd),
     [filteredLogs, chartUsers, range.since, rangeEnd],
@@ -189,35 +199,59 @@ export const AnalyticsTab = () => {
     setSelectedMuscle(null);
   };
 
+  // Resumen de una línea que reemplaza a los filtros cuando están ocultos.
+  const filtersSummary = [
+    activeGroup?.name ?? 'Solo yo',
+    selectedIds?.length ? `${selectedIds.length} de ${memberIds.length} perfiles` : `${memberIds.length} ${memberIds.length === 1 ? 'perfil' : 'perfiles'}`,
+    DATE_PRESETS.find((preset) => preset.value === datePreset)?.label,
+    categories ? `${categories.length} categorías` : null,
+    muscles ? `${muscles.length} músculos` : null,
+  ].filter(Boolean).join(', ');
+
   const selectedMuscleIsFilteredOnly = muscles?.length === 1 && muscles[0] === selectedMuscle;
   const isLongRange = rangeDays > LONG_RANGE_DAYS;
 
   return (
     <div className="space-y-4 md:space-y-6">
-      <SectionCard>
-        <AnalyticsFilters
-          groups={groups}
-          scopeId={scopeId}
-          onScopeChange={handleScopeChange}
-          memberOptions={memberOptions}
-          selectedUserIds={selectedIds?.length ? selectedIds : null}
-          onUsersChange={(ids) => setUserSelection({ scopeId, ids })}
-          categories={categories}
-          onCategoriesChange={setCategories}
-          muscles={muscles}
-          onMusclesChange={(next) => setMuscles(next && next.every((id) => MUSCLE_IDS.includes(id)) ? next : null)}
-          datePreset={datePreset}
-          onDatePresetChange={setDatePreset}
-          customRange={customRange}
-          onCustomRangeChange={setCustomRange}
-          todayKey={todayKey}
-        />
-        {groups.length === 0 && (
-          <p className="mt-3 text-xs text-muted">Crea o únete a un grupo en la pestaña Grupos para comparar tu progreso con amigos.</p>
-        )}
-        {isLongRange && (
-          <p className="mt-2 text-xs text-muted">Rangos largos descargan más registros (cuota gratuita de Firestore: 50.000 lecturas/día).</p>
-        )}
+      <SectionCard
+        title="Filtros"
+        subtitle={filtersOpen ? undefined : filtersSummary}
+        actions={
+          <IconButton
+            label={filtersOpen ? 'Ocultar filtros' : 'Mostrar filtros'}
+            icon={filtersOpen ? ChevronUp : ChevronDown}
+            onClick={() => { playClick(); setFiltersOpen((open) => !open); }}
+          />
+        }
+      >
+        {/* `hidden` (no desmontar): conserva los bloques desplegados cuando se vuelve a mostrar. */}
+        <div hidden={!filtersOpen} aria-hidden={!filtersOpen}>
+          <AnalyticsFilters
+            groups={groups}
+            scopeId={scopeId}
+            onScopeChange={handleScopeChange}
+            memberOptions={memberOptions}
+            selectedUserIds={selectedIds?.length ? selectedIds : null}
+            onUsersChange={(ids) => setUserSelection({ scopeId, ids })}
+            categories={categories}
+            onCategoriesChange={setCategories}
+            muscles={muscles}
+            onMusclesChange={(next) => setMuscles(next && next.every((id) => MUSCLE_IDS.includes(id)) ? next : null)}
+            datePreset={datePreset}
+            onDatePresetChange={setDatePreset}
+            customRange={customRange}
+            onCustomRangeChange={setCustomRange}
+            todayKey={todayKey}
+            unifyDays={unifyDays}
+            onUnifyDaysChange={setUnifyDays}
+          />
+          {groups.length === 0 && (
+            <p className="mt-3 text-xs text-muted">Crea o únete a un grupo en la pestaña Grupos para comparar tu progreso con amigos.</p>
+          )}
+          {isLongRange && (
+            <p className="mt-2 text-xs text-muted">Rangos largos descargan más registros (cuota gratuita de Firestore: 50.000 lecturas/día).</p>
+          )}
+        </div>
         {logsState.meta?.isTruncated && (
           <p className="mt-2 text-xs text-muted">Se muestran los registros más recientes; acota el rango para ver el detalle completo.</p>
         )}
@@ -247,6 +281,13 @@ export const AnalyticsTab = () => {
             <StatTile icon={Trophy} label="Récords" value={focusMetrics.records} hint="PRs de 1RM estimado" />
             <StatTile icon={Flame} label="Racha" value={focusMetrics.streak === null ? '—' : `${focusMetrics.streak} sem`} hint={focusMetrics.streak === null ? 'solo por perfil individual' : 'semanas consecutivas'} />
           </div>
+
+          <SectionCard
+            title="Consistencia"
+            subtitle="Ejercicios acumulados por perfil en el período, con tus filtros de categoría y músculo"
+          >
+            <ConsistencyChart seriesList={consistencySeries} domain={consistencyDomain} unifyDays={unifyDays} />
+          </SectionCard>
 
           <SectionCard
             title="Mapa muscular"
@@ -306,7 +347,7 @@ export const AnalyticsTab = () => {
               )
             }
           >
-            <StrengthProgressChart seriesList={strengthSeries} />
+            <StrengthProgressChart seriesList={strengthSeries} unifyDays={unifyDays} />
           </SectionCard>
 
           <SectionCard title="Tonelaje semanal" subtitle="Series × reps × kg por semana (ejercicios que pasan los filtros)">
