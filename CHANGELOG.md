@@ -34,9 +34,13 @@ Cada versión se etiqueta en git como `vX.Y.Z` y la versión vigente se toma de 
 
 ### Changed
 - La app pasa a llamarse **Colossus** en todos los lugares (título de la pestaña, `package.json`, metadatos).
-- Nuevo ícono minimalista (una "C" grande que contiene otra "C" más chica), pensado para favicon, Instagram, WhatsApp y Canva.
+- Nuevo ícono minimalista: una "C" blanca; el ícono de la pestaña del navegador tiene fondo transparente. Hay versiones con fondo para Instagram, WhatsApp y Canva en `public/brand/`.
+- El **Ranking** (fuerza, constancia y récords recientes) pasa a la pestaña Grupos: hay una competencia por cada grupo de amigos y solo compiten sus integrantes.
 - Editor de rutinas: se quitó el campo de kg al agregar un ejercicio.
 - Las cintas, bicicleta fija, soga y remo ergómetro pasan de "Funcional / Cardio" a la categoría Cardio.
+
+### Removed
+- Pestaña Ranking independiente (ahora vive dentro de cada grupo).
 
 ### Fixed
 - Perfil: en celular la pantalla se extendía más que el ancho y desplazaba la barra de navegación y otros elementos.

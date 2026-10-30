@@ -37,13 +37,14 @@ const RankRow = ({ position, name, isMe, primary, secondary }) => (
 
 // Ranking de fuerza por 1RM estimado: compara series con distintas reps de forma justa
 // (el original comparaba kg brutos sin reps: 100kg×1 "ganaba" a 95kg×10).
-const StrengthRanking = () => {
+const StrengthRanking = ({ memberIds }) => {
   const { user, personalBests, profilesById } = useAppData();
   const [search, setSearch] = useState('');
 
   const exercises = useMemo(() => {
     const byExercise = {};
-    Object.values(personalBests).forEach(({ userId, username, bests }) => {
+    // Solo marcas de integrantes del grupo: cada grupo es su propia competencia.
+    Object.values(personalBests).filter(({ userId }) => memberIds.includes(userId)).forEach(({ userId, username, bests }) => {
       Object.entries(bests).forEach(([exercise, best]) => {
         if (!best?.e1rm) return;
         (byExercise[exercise] ??= []).push({ userId, name: profilesById[userId]?.username ?? username, ...best });
@@ -52,12 +53,12 @@ const StrengthRanking = () => {
     return Object.entries(byExercise)
       .map(([exercise, entries]) => ({ exercise, entries: entries.sort((a, b) => b.e1rm - a.e1rm) }))
       .sort((a, b) => b.entries.length - a.entries.length || a.exercise.localeCompare(b.exercise));
-  }, [personalBests, profilesById]);
+  }, [personalBests, profilesById, memberIds]);
 
   const filtered = exercises.filter(({ exercise }) => exercise.includes(search.trim().toUpperCase()));
 
   if (exercises.length === 0) {
-    return <EmptyState icon={Trophy} title="Aún no hay marcas" description="Registra ejercicios con peso y reps para aparecer en el ranking." />;
+    return <EmptyState icon={Trophy} title="Aún no hay marcas" description="Cuando alguien del grupo registre ejercicios con peso y reps, aparecerá aquí." />;
   }
 
   return (
@@ -66,7 +67,7 @@ const StrengthRanking = () => {
         <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" aria-hidden />
         <input className="input pl-9" placeholder="Buscar ejercicio" aria-label="Buscar ejercicio" value={search} onChange={(event) => setSearch(event.target.value)} />
       </div>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid max-h-[32rem] gap-3 overflow-y-auto overscroll-contain">
         {filtered.map(({ exercise, entries }) => (
           <SectionCard key={exercise} title={exercise} subtitle={`${entries.length} participante(s) · 1RM estimado`}>
             <ol className="space-y-1">
@@ -89,23 +90,23 @@ const StrengthRanking = () => {
 };
 
 // Constancia = días distintos entrenados, no cantidad de registros (el original premiaba "spamear" ejercicios).
-const ConsistencyRanking = ({ logs }) => {
-  const { user, profiles } = useAppData();
+const ConsistencyRanking = ({ logs, memberIds }) => {
+  const { user, profilesById } = useAppData();
   const todayKey = useToday();
 
   const rows = useMemo(() => {
     const today = parseDateKey(todayKey);
     const since7 = addDays(today, -6);
     const since30 = addDays(today, -(QUERY_LIMITS.RANKING_LOOKBACK_DAYS - 1));
-    return profiles
-      .map((profile) => ({
-        userId: profile.id,
-        name: profile.username,
-        days7: countTrainingDays(logs, profile.id, since7),
-        days30: countTrainingDays(logs, profile.id, since30),
+    return memberIds
+      .map((memberId) => ({
+        userId: memberId,
+        name: profilesById[memberId]?.username ?? 'Perfil sin nombre',
+        days7: countTrainingDays(logs, memberId, since7),
+        days30: countTrainingDays(logs, memberId, since30),
       }))
       .sort((a, b) => b.days30 - a.days30 || b.days7 - a.days7);
-  }, [logs, profiles, todayKey]);
+  }, [logs, memberIds, profilesById, todayKey]);
 
   return (
     <SectionCard title="Días entrenados" subtitle="Últimos 30 días (y últimos 7)">
@@ -152,11 +153,17 @@ const RecentRecords = ({ logs }) => {
   );
 };
 
-export const RankingTab = () => {
+/*
+ * Ranking del grupo: una competencia por grupo de amigos (antes era una pestaña global con todos los perfiles).
+ * Las consultas se acotan a los integrantes (userId in [...]); Fuerza usa el agregado personalBests (0 lecturas extra).
+ */
+export const GroupRanking = ({ group }) => {
   const [view, setView] = useState('strength');
   const todayKey = useToday();
+  const memberIds = group.memberIds;
+  const memberKey = memberIds.join('|');
 
-  // Suscripción perezosa: solo se leen logs cuando la vista los necesita (Fuerza usa el agregado personalBests).
+  // Suscripción perezosa: solo se leen logs cuando la vista los necesita.
   const needsLogs = view !== 'strength';
   const logsState = useSubscription(
     needsLogs
@@ -164,23 +171,24 @@ export const RankingTab = () => {
           subscribeToLogs(
             {
               since: addDays(parseDateKey(todayKey), -(QUERY_LIMITS.RANKING_LOOKBACK_DAYS - 1)),
+              userIds: memberIds,
               onlyRecords: view === 'records',
             },
             onData,
             onError,
           )
       : null,
-    [view, todayKey],
+    [view, todayKey, memberKey],
     [],
   );
 
   return (
-    <div className="space-y-4">
-      <div className="mx-auto max-w-md"><SegmentedControl label="Tipo de ranking" options={VIEWS} value={view} onChange={setView} /></div>
-      {logsState.error && <p className="text-center text-sm text-accent">{toUserMessage(logsState.error)}</p>}
-      {view === 'strength' && <StrengthRanking />}
-      {view === 'consistency' && (logsState.loading ? <div className="skeleton h-64" /> : <ConsistencyRanking logs={logsState.data} />)}
-      {view === 'records' && (logsState.loading ? <div className="skeleton h-64" /> : <RecentRecords logs={logsState.data} />)}
-    </div>
+    <section className="mt-3 space-y-3 rounded-xl border divider p-3" aria-label={`Ranking de ${group.name}`}>
+      <SegmentedControl label="Tipo de ranking" options={VIEWS} value={view} onChange={setView} />
+      {logsState.error && <p role="alert" className="text-center text-sm text-accent">{toUserMessage(logsState.error)}</p>}
+      {view === 'strength' && <StrengthRanking memberIds={memberIds} />}
+      {view === 'consistency' && (logsState.loading ? <div className="skeleton h-48" /> : <ConsistencyRanking logs={logsState.data} memberIds={memberIds} />)}
+      {view === 'records' && (logsState.loading ? <div className="skeleton h-48" /> : <RecentRecords logs={logsState.data} />)}
+    </section>
   );
 };

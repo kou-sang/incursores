@@ -1,5 +1,5 @@
 import { AnimatePresence, domAnimation, LazyMotion, m } from 'framer-motion';
-import { Activity, BookOpen, CalendarDays, Home, LogOut, Moon, Sun, Trophy, UserRound, Users, Volume2, VolumeX } from 'lucide-react';
+import { Activity, BookOpen, CalendarDays, Home, LogOut, Moon, Sun, UserRound, Users, Volume2, VolumeX } from 'lucide-react';
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { CelebrationLayer } from './components/CelebrationLayer';
 import { useCelebration } from './components/useCelebration';
@@ -30,16 +30,14 @@ import { lazyWithPrefetch, runWhenIdle } from './utils/lazyWithPrefetch';
 const TAB_MODULES = Object.freeze({
   routines: lazyWithPrefetch(() => import('./features/routines/RoutinesTab'), 'RoutinesTab'),
   library: lazyWithPrefetch(() => import('./features/library/ExerciseLibraryTab'), 'ExerciseLibraryTab'),
-  ranking: lazyWithPrefetch(() => import('./features/ranking/RankingTab'), 'RankingTab'),
   analytics: lazyWithPrefetch(() => import('./features/analytics/AnalyticsTab'), 'AnalyticsTab'),
   groups: lazyWithPrefetch(() => import('./features/groups/GroupsTab'), 'GroupsTab'),
   profile: lazyWithPrefetch(() => import('./features/profile/ProfileTab'), 'ProfileTab'),
 });
-const IDLE_PREFETCH_TABS = Object.freeze(['routines', 'library', 'groups', 'profile', 'ranking']);
+const IDLE_PREFETCH_TABS = Object.freeze(['routines', 'library', 'groups', 'profile']);
 
 const RoutinesTab = TAB_MODULES.routines.Component;
 const ExerciseLibraryTab = TAB_MODULES.library.Component;
-const RankingTab = TAB_MODULES.ranking.Component;
 const AnalyticsTab = TAB_MODULES.analytics.Component;
 const GroupsTab = TAB_MODULES.groups.Component;
 const ProfileTab = TAB_MODULES.profile.Component;
@@ -50,7 +48,6 @@ const TABS = Object.freeze([
   { id: 'today', label: 'Hoy', icon: Home },
   { id: 'routines', label: 'Rutinas', icon: CalendarDays },
   { id: 'library', label: 'Ejercicios', icon: BookOpen },
-  { id: 'ranking', label: 'Ranking', icon: Trophy },
   { id: 'analytics', label: 'Analíticas', icon: Activity },
   { id: 'groups', label: 'Grupos', icon: Users },
   { id: 'profile', label: 'Perfil', icon: UserRound },
@@ -59,10 +56,9 @@ const TABS = Object.freeze([
 // Texto del fallback de Suspense: explica qué módulo se está descargando.
 const TAB_LOADING_LABELS = Object.freeze({
   analytics: 'Cargando el módulo de Analíticas (gráficos)…',
-  ranking: 'Cargando el módulo de Ranking…',
   routines: 'Cargando el módulo de Rutinas…',
   library: 'Cargando la biblioteca de ejercicios…',
-  groups: 'Cargando el módulo de Grupos…',
+  groups: 'Cargando tus grupos y rankings…',
   profile: 'Cargando el módulo de Perfil…',
 });
 
@@ -169,7 +165,6 @@ const AuthenticatedApp = ({ user }) => {
                   {activeTab === 'today' && <TodayTab onCelebrate={celebrate} />}
                   {activeTab === 'routines' && <RoutinesTab />}
                   {activeTab === 'library' && <ExerciseLibraryTab />}
-                  {activeTab === 'ranking' && <RankingTab />}
                   {activeTab === 'analytics' && <AnalyticsTab />}
                   {activeTab === 'groups' && <GroupsTab />}
                   {activeTab === 'profile' && <ProfileTab />}
