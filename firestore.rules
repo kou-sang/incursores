@@ -66,6 +66,63 @@ service cloud.firestore {
       allow write: if isOwner(uid);
     }
 
+    // ───────── Grupos ─────────
+    function validGroupFields(d) {
+      return d.name is string && d.name.size() >= 2 && d.name.size() <= 40
+        && (!('description' in d) || (d.description is string && d.description.size() <= 160))
+        && d.memberIds is list && d.memberIds.size() <= 30
+        && d.ownerId in d.memberIds
+        && d.inviteCode is string && d.inviteCode.size() == 8;
+    }
+
+    function addedMembers() {
+      return request.resource.data.memberIds.toSet().difference(resource.data.memberIds.toSet());
+    }
+
+    function removedMembers() {
+      return resource.data.memberIds.toSet().difference(request.resource.data.memberIds.toSet());
+    }
+
+    match /groups/{groupId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.memberIds;
+
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.memberIds == [request.auth.uid]
+        && validGroupFields(request.resource.data);
+
+      // 1) Administrador: edita configuración, quita miembros o transfiere (nunca agrega a terceros sin consentimiento).
+      // 2) Unirse: solo se agrega a sí mismo y debe conocer el código vigente (joinCode == inviteCode).
+      // 3) Salir: un miembro (no administrador) se quita a sí mismo.
+      allow update: if signedIn() && validGroupFields(request.resource.data) && (
+        (resource.data.ownerId == request.auth.uid
+          && addedMembers().size() == 0
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'description', 'memberIds', 'ownerId', 'inviteCode', 'updatedAt']))
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds', 'joinCode'])
+          && request.resource.data.joinCode == resource.data.inviteCode
+          && addedMembers().hasOnly([request.auth.uid])
+          && removedMembers().size() == 0)
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds'])
+          && resource.data.ownerId != request.auth.uid
+          && removedMembers().hasOnly([request.auth.uid])
+          && addedMembers().size() == 0)
+      );
+
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // Índice código → grupo. 'get' puntual permitido (hace falta conocer el código); 'list' prohibido (sin enumeración).
+    match /groupInvites/{code} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && getAfter(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.ownerId == request.auth.uid
+        && getAfter(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.inviteCode == code;
+      allow delete: if signedIn()
+        && get(/databases/$(database)/documents/groups/$(resource.data.groupId)).data.ownerId == request.auth.uid;
+      allow update: if false;
+    }
+
     // Colección legada: solo lectura hasta completar la migración, luego eliminar.
     match /prs/{docId} {
       allow read: if signedIn();

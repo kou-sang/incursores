@@ -2,7 +2,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { useEffect, useMemo, useState } from 'react';
 import { auth } from '../config/firebase';
 import { isProfileCreationPending, onProfileCreationPendingChange } from '../services/authService';
-import { ensureUserDocuments, subscribeToAccount, subscribeToProfile } from '../services/userService';
+import { ensureUserDocuments, subscribeToAccount, subscribeToProfile, syncAccountEmail } from '../services/userService';
 import { logError } from '../utils/errors';
 
 export const SESSION_STATUS = Object.freeze({
@@ -73,17 +73,26 @@ export const useAuthSession = () => {
     });
   }, [authUser, profile, account]);
 
+  // Tras verifyBeforeUpdateEmail el correo cambia en Auth; se refleja en el doc privado (1 escritura, solo si difiere).
+  useEffect(() => {
+    if (!authUser?.email || !account || account.email === authUser.email) return;
+    syncAccountEmail(authUser.uid, authUser.email).catch((syncError) => logError('session:email-sync', syncError));
+  }, [authUser, account]);
+
   return useMemo(() => {
-    if (authUser === undefined) return { status: SESSION_STATUS.LOADING, user: null };
+    if (authUser === undefined) return { status: SESSION_STATUS.LOADING, user: null, loadingLabel: 'Verificando tu sesión…' };
     if (authUser === null) return { status: SESSION_STATUS.SIGNED_OUT, user: null };
     if (error) return { status: SESSION_STATUS.ERROR, user: null, error };
-    if (profile === undefined || account === undefined) return { status: SESSION_STATUS.LOADING, user: null };
+    if (profile === undefined || account === undefined) {
+      return { status: SESSION_STATUS.LOADING, user: null, loadingLabel: 'Cargando tu perfil…' };
+    }
     if (profile === null) {
       const isWaiting = creationPending || Boolean(account?.username);
       return {
         status: isWaiting ? SESSION_STATUS.LOADING : SESSION_STATUS.NEEDS_PROFILE,
         user: null,
         authUser,
+        loadingLabel: creationPending ? 'Creando tu perfil…' : 'Migrando tu perfil al nuevo formato…',
       };
     }
     return {
@@ -94,6 +103,9 @@ export const useAuthSession = () => {
         username: profile.username,
         gender: profile.gender,
         activeRoutineId: account?.activeRoutineId ?? null,
+        preferences: account?.preferences ?? {},
+        // Proveedores vinculados: define si cambiar contraseña/correo pide la contraseña actual o Google.
+        providerIds: authUser.providerData.map((provider) => provider.providerId),
       },
     };
   }, [authUser, profile, account, error, creationPending]);

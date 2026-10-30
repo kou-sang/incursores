@@ -1,9 +1,8 @@
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, m } from 'framer-motion';
 import { AlertTriangle, CheckCircle2, Info, X } from 'lucide-react';
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FeedbackContext } from './FeedbackContext';
 
-// Reemplaza alert()/confirm(): bloquean el hilo, rompen el diseño y en iOS PWA pueden no mostrarse.
-const FeedbackContext = createContext(null);
 
 const TOAST_DURATION_MS = 3500;
 const TOAST_ICONS = { success: CheckCircle2, error: AlertTriangle, info: Info };
@@ -56,7 +55,7 @@ export const FeedbackProvider = ({ children }) => {
           {toasts.map((toast) => {
             const Icon = TOAST_ICONS[toast.type] ?? Info;
             return (
-              <motion.div
+              <m.div
                 key={toast.id}
                 initial={{ opacity: 0, y: -12 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -69,7 +68,7 @@ export const FeedbackProvider = ({ children }) => {
                 <button type="button" className="text-muted" onClick={() => dismissToast(toast.id)} aria-label="Cerrar aviso">
                   <X size={16} />
                 </button>
-              </motion.div>
+              </m.div>
             );
           })}
         </AnimatePresence>
@@ -77,14 +76,14 @@ export const FeedbackProvider = ({ children }) => {
 
       <AnimatePresence>
         {dialog && (
-          <motion.div
+          <m.div
             className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 p-4 sm:items-center"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => closeDialog(false)}
           >
-            <motion.div
+            <m.div
               role="alertdialog"
               aria-modal="true"
               aria-labelledby="confirm-title"
@@ -107,16 +106,10 @@ export const FeedbackProvider = ({ children }) => {
                   {dialog.confirmLabel}
                 </button>
               </div>
-            </motion.div>
-          </motion.div>
+            </m.div>
+          </m.div>
         )}
       </AnimatePresence>
     </FeedbackContext.Provider>
   );
-};
-
-export const useFeedback = () => {
-  const context = useContext(FeedbackContext);
-  if (!context) throw new Error('useFeedback debe usarse dentro de <FeedbackProvider>');
-  return context;
 };

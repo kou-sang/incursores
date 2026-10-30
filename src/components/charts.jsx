@@ -32,12 +32,3 @@ export const ChartLegend = ({ items }) => (
     ))}
   </ul>
 );
-
-// Props comunes de ejes: grilla y ejes recesivos.
-export const useAxisProps = () => {
-  const { chart } = useTheme();
-  return {
-    grid: { stroke: chart.grid, strokeDasharray: '0', vertical: false },
-    axis: { stroke: chart.axis, tick: { fill: chart.text, fontSize: 12 }, axisLine: false, tickLine: false },
-  };
-};

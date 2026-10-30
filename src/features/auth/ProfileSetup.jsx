@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { BrandMark, FieldLabel } from '../../components/ui';
+import { BrandMark, FieldLabel, InlineSpinner } from '../../components/ui';
 import { logout } from '../../services/authService';
 import { ensureUserDocuments } from '../../services/userService';
 import { logError, toUserMessage } from '../../utils/errors';
+import { ThemeToggleButton } from './LoginScreen';
 
 // Paso obligatorio para cuentas sin perfil (Google nuevo o escritura fallida durante el registro).
 export const ProfileSetup = ({ authUser }) => {
@@ -25,7 +26,8 @@ export const ProfileSetup = ({ authUser }) => {
   };
 
   return (
-    <main className="flex min-h-[100dvh] items-center justify-center p-4">
+    <main className="relative flex min-h-[100dvh] items-center justify-center p-4">
+      <ThemeToggleButton />
       <form onSubmit={handleSubmit} className="card w-full max-w-md space-y-4 p-6">
         <BrandMark />
         <h1 className="text-xl font-bold">Completa tu perfil</h1>
@@ -42,7 +44,7 @@ export const ProfileSetup = ({ authUser }) => {
             <option value="femenino">Femenino</option>
           </select>
         </div>
-        <button type="submit" className="btn btn-primary w-full" disabled={isSubmitting}>{isSubmitting ? 'Guardando…' : 'Continuar'}</button>
+        <button type="submit" className="btn btn-primary w-full" disabled={isSubmitting}>{isSubmitting ? <><InlineSpinner /> Creando tu perfil…</> : 'Continuar'}</button>
         <button type="button" className="btn btn-ghost w-full" onClick={() => logout().catch((logoutError) => logError('auth:logout', logoutError))}>
           Usar otra cuenta
         </button>

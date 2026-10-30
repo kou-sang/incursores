@@ -1,5 +1,6 @@
 import { GENDERS } from '../constants/collections';
-import { normalizeExerciseName } from '../constants/exercises';
+import { canonicalExerciseName } from '../constants/exercises';
+import { LEGACY_MUSCLE_DISTRIBUTION, MUSCLE_IDS } from '../constants/muscles';
 import { ValidationError } from '../utils/errors';
 
 // Unicode: el regex original /^[a-zA-Z]+$/ rechazaba "Ñandú", "José" o "Ana María".
@@ -33,8 +34,13 @@ const parseOptionalNumber = (value) => {
 
 // Valida una entrada de entrenamiento. Bug original: `if (pesoNum)` descartaba 0 kg,
 // aceptaba negativos y no registraba reps → los "PR" comparaban pesos con reps distintas.
+// Solo se aceptan ids de músculo conocidos (individuales o macro legados).
+const sanitizeMuscleId = (muscle) =>
+  typeof muscle === 'string' && (MUSCLE_IDS.includes(muscle) || LEGACY_MUSCLE_DISTRIBUTION[muscle]) ? muscle : null;
+
+// Los alias se guardan con el nombre canónico → historial y ranking no se fragmentan.
 export const sanitizeLogEntry = ({ exercise, muscle, sets, reps, weight }) => {
-  const name = normalizeExerciseName(exercise);
+  const name = canonicalExerciseName(exercise);
   if (!name || name.length > 60) throw new ValidationError('Nombre de ejercicio inválido.');
 
   const parsedSets = parseOptionalNumber(sets) ?? 1;
@@ -54,22 +60,42 @@ export const sanitizeLogEntry = ({ exercise, muscle, sets, reps, weight }) => {
 
   return {
     exercise: name,
-    muscle: typeof muscle === 'string' && muscle ? muscle : null,
+    muscle: sanitizeMuscleId(muscle),
     sets: parsedSets,
     reps: parsedReps,
     weight: parsedWeight === null ? null : Math.round(parsedWeight * 100) / 100,
   };
 };
 
+export const ROUTINE_DEFAULTS = Object.freeze({ sets: 3, reps: '10' });
+
+// Series, reps y kg son opcionales: vacío → valores por defecto (3 × 10) y kg sin especificar (null).
 export const sanitizeRoutineItem = (item) => {
-  const exercise = normalizeExerciseName(item.exercise);
+  const exercise = canonicalExerciseName(item.exercise);
   if (!exercise) return null; // Filas vacías se descartan silenciosamente
-  const sets = Number(item.sets);
+
+  const rawSets = String(item.sets ?? '').trim();
+  const sets = rawSets === '' ? ROUTINE_DEFAULTS.sets : Number(rawSets);
   if (!Number.isInteger(sets) || sets < 1 || sets > 20) {
     throw new ValidationError(`"${exercise}": las series deben ser un entero entre 1 y 20.`);
   }
-  const reps = String(item.reps ?? '').trim().slice(0, 12);
-  return { id: item.id, exercise, sets, reps, muscle: item.muscle || null };
+
+  const reps = String(item.reps ?? '').trim().slice(0, 12) || ROUTINE_DEFAULTS.reps;
+
+  const weight = parseOptionalNumber(item.weight);
+  if (weight !== null && (Number.isNaN(weight) || weight < 0 || weight > 1000)) {
+    throw new ValidationError(`"${exercise}": el peso debe estar entre 0 y 1000 kg.`);
+  }
+
+  // El músculo ya no se elige a mano (se infiere); se conserva el de rutinas viejas para no perder historial.
+  return {
+    id: item.id,
+    exercise,
+    sets,
+    reps,
+    weight: weight === null ? null : Math.round(weight * 100) / 100,
+    muscle: sanitizeMuscleId(item.muscle),
+  };
 };
 
 // Extrae el primer número de un objetivo de reps ("8-12" → 8) para prellenar formularios.

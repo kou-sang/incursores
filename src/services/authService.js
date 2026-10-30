@@ -1,11 +1,17 @@
 import {
   createUserWithEmailAndPassword,
+  EmailAuthProvider,
   GoogleAuthProvider,
+  linkWithCredential,
+  reauthenticateWithCredential,
+  reauthenticateWithPopup,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
+  updatePassword,
   updateProfile,
+  verifyBeforeUpdateEmail,
 } from 'firebase/auth';
 import { auth } from '../config/firebase';
 import { ensureUserDocuments } from './userService';
@@ -29,7 +35,7 @@ export const onProfileCreationPendingChange = (listener) => {
   return () => pendingListeners.delete(listener);
 };
 
-const sanitizeEmail = (email) => {
+export const sanitizeEmail = (email) => {
   const value = String(email ?? '').trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) throw new ValidationError('Correo inválido.');
   return value;
@@ -71,3 +77,63 @@ export const requestPasswordReset = async (email) => {
 };
 
 export const logout = () => signOut(auth);
+
+// ───────── Gestión de cuenta (pestaña Perfil) ─────────
+
+const PASSWORD_PROVIDER = 'password';
+const GOOGLE_PROVIDER = 'google.com';
+
+const requireCurrentUser = () => {
+  const user = auth.currentUser;
+  if (!user) throw new ValidationError('Tu sesión expiró. Vuelve a ingresar.');
+  return user;
+};
+
+export const hasPasswordProvider = (user = auth.currentUser) =>
+  Boolean(user?.providerData.some((provider) => provider.providerId === PASSWORD_PROVIDER));
+
+/**
+ * Firebase exige un login reciente para operaciones sensibles (auth/requires-recent-login).
+ * Cuentas con contraseña → se pide la actual; cuentas solo-Google → popup de Google.
+ */
+const reauthenticate = async (currentPassword) => {
+  const user = requireCurrentUser();
+  if (hasPasswordProvider(user)) {
+    if (!currentPassword) throw new ValidationError('Ingresa tu contraseña actual.');
+    await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, currentPassword));
+    return user;
+  }
+  if (user.providerData.some((provider) => provider.providerId === GOOGLE_PROVIDER)) {
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account', login_hint: user.email ?? '' });
+    await reauthenticateWithPopup(user, provider);
+    return user;
+  }
+  throw new ValidationError('No se pudo verificar tu identidad.');
+};
+
+// Cuentas de Google sin contraseña: se vincula el proveedor email/contraseña (podrán entrar de ambas formas).
+export const changePassword = async ({ currentPassword, newPassword }) => {
+  sanitizePassword(newPassword);
+  const user = await reauthenticate(currentPassword);
+  if (hasPasswordProvider(user)) {
+    await updatePassword(user, newPassword);
+    return 'updated';
+  }
+  await linkWithCredential(user, EmailAuthProvider.credential(user.email, newPassword));
+  return 'linked';
+};
+
+// El cambio se aplica recién cuando el usuario confirma desde el NUEVO correo (evita secuestro de cuentas).
+export const changeEmail = async ({ currentPassword, newEmail }) => {
+  const cleanEmail = sanitizeEmail(newEmail);
+  const user = await reauthenticate(currentPassword);
+  if (cleanEmail === user.email) throw new ValidationError('Ese ya es tu correo actual.');
+  await verifyBeforeUpdateEmail(user, cleanEmail);
+  return cleanEmail;
+};
+
+export const updateDisplayName = async (username) => {
+  const user = requireCurrentUser();
+  await updateProfile(user, { displayName: username });
+};

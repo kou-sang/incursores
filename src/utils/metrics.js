@@ -1,4 +1,4 @@
-import { resolveMuscle } from '../constants/exercises';
+import { getExerciseCategory, resolveMuscleDistribution } from '../constants/exercises';
 import { addDays, diffInCalendarDays, startOfWeek, toDateKey, toWeekKey } from './dates';
 
 // Funciones puras: sin React ni Firestore → testeables de forma aislada.
@@ -60,29 +60,123 @@ export const buildWeeklyTonnage = (logs, userIds, since, now = new Date()) => {
   return [...rows.values()];
 };
 
-// Series efectivas por músculo en los últimos N días (guía de hipertrofia: ~10–20 series/semana).
-export const buildSetsByMuscle = (logs, userId, days = 7, now = new Date()) => {
-  const since = addDays(now, -(days - 1));
+// Umbral de participación para considerar que un ejercicio "estimuló" un músculo (recuperación/abandono).
+const MIN_SHARE_FOR_STIMULUS = 0.15;
+
+/**
+ * Filtro central de analíticas. Se aplica en memoria (sin lecturas extra a Firestore).
+ * `categories`/`muscles` = null significa "todos".
+ */
+export const filterLogs = (logs, { userIds = null, categories = null, muscles = null, since = null, until = null } = {}) => {
+  const userSet = userIds ? new Set(userIds) : null;
+  const categorySet = categories ? new Set(categories) : null;
+  const muscleSet = muscles ? new Set(muscles) : null;
+  return logs.filter((log) => {
+    if (userSet && !userSet.has(log.userId)) return false;
+    if (since && log.performedAt < since) return false;
+    if (until && log.performedAt > until) return false;
+    if (categorySet && !categorySet.has(getExerciseCategory(log))) return false;
+    if (muscleSet && !Object.keys(resolveMuscleDistribution(log)).some((muscleId) => muscleSet.has(muscleId))) return false;
+    return true;
+  });
+};
+
+// Series efectivas = series × participación del músculo (Face Pull 3 series → 1.2 en deltoides posterior).
+const forEachMuscleShare = (log, muscleSet, callback) => {
+  const sets = Number.isFinite(log.sets) ? log.sets : 0;
+  Object.entries(resolveMuscleDistribution(log)).forEach(([muscleId, share]) => {
+    if (muscleSet && !muscleSet.has(muscleId)) return;
+    callback(muscleId, sets * share, share);
+  });
+};
+
+export const buildEffectiveSetsByMuscle = (logs, { userIds = null, muscles = null } = {}) => {
+  const userSet = userIds ? new Set(userIds) : null;
+  const muscleSet = muscles ? new Set(muscles) : null;
   const totals = {};
   logs.forEach((log) => {
-    if (log.userId !== userId || log.performedAt < since) return;
-    const muscle = resolveMuscle(log);
-    totals[muscle] = (totals[muscle] ?? 0) + (Number.isFinite(log.sets) ? log.sets : 0);
+    if (userSet && !userSet.has(log.userId)) return;
+    forEachMuscleShare(log, muscleSet, (muscleId, effectiveSets) => {
+      totals[muscleId] = (totals[muscleId] ?? 0) + effectiveSets;
+    });
   });
   return totals;
+};
+
+// Compatibilidad: series efectivas por músculo en los últimos N días para un usuario.
+export const buildSetsByMuscle = (logs, userId, days = 7, now = new Date()) => {
+  const since = addDays(now, -(days - 1));
+  return buildEffectiveSetsByMuscle(logs.filter((log) => log.performedAt >= since), { userIds: [userId] });
+};
+
+// Serie semanal de series efectivas de un músculo por usuario (gráfico generado al hacer click).
+export const buildWeeklyMuscleSeries = (logs, muscleId, userIds, since, now = new Date()) => {
+  const rows = new Map();
+  for (let cursor = startOfWeek(since); cursor <= now; cursor = addDays(cursor, 7)) {
+    rows.set(toDateKey(cursor), { weekKey: toDateKey(cursor), time: cursor.getTime(), ...Object.fromEntries(userIds.map((id) => [id, 0])) });
+  }
+  const muscleSet = new Set([muscleId]);
+  logs.forEach((log) => {
+    if (!userIds.includes(log.userId)) return;
+    const row = rows.get(toWeekKey(log.performedAt));
+    if (!row) return;
+    forEachMuscleShare(log, muscleSet, (_, effectiveSets) => {
+      row[log.userId] = round1(row[log.userId] + effectiveSets);
+    });
+  });
+  return [...rows.values()];
+};
+
+// Qué ejercicios aportan a un músculo y con qué porcentaje del total.
+export const buildExerciseContributions = (logs, muscleId, userIds = null) => {
+  const userSet = userIds ? new Set(userIds) : null;
+  const byExercise = {};
+  let total = 0;
+  logs.forEach((log) => {
+    if (userSet && !userSet.has(log.userId)) return;
+    forEachMuscleShare(log, new Set([muscleId]), (_, effectiveSets, share) => {
+      const entry = (byExercise[log.exercise] ??= { exercise: log.exercise, effectiveSets: 0, share });
+      entry.effectiveSets += effectiveSets;
+      total += effectiveSets;
+    });
+  });
+  return Object.values(byExercise)
+    .map((entry) => ({ ...entry, effectiveSets: round1(entry.effectiveSets), ratio: total ? entry.effectiveSets / total : 0 }))
+    .sort((a, b) => b.effectiveSets - a.effectiveSets);
 };
 
 export const buildMuscleLastTrained = (logs, userId) => {
   const lastByMuscle = {};
   logs.forEach((log) => {
-    if (log.userId !== userId) return;
-    const muscle = resolveMuscle(log);
-    const previous = lastByMuscle[muscle];
-    if (!previous || log.performedAt > previous.date) {
-      lastByMuscle[muscle] = { date: log.performedAt, exercise: log.exercise };
-    }
+    if (userId && log.userId !== userId) return;
+    Object.entries(resolveMuscleDistribution(log)).forEach(([muscle, share]) => {
+      if (share < MIN_SHARE_FOR_STIMULUS) return;
+      const previous = lastByMuscle[muscle];
+      if (!previous || log.performedAt > previous.date) {
+        lastByMuscle[muscle] = { date: log.performedAt, exercise: log.exercise };
+      }
+    });
   });
   return lastByMuscle;
+};
+
+/*
+ * Escala de estímulo (series efectivas por semana) → nivel 0–5 del ramp verde.
+ * Bins discretos (no gradiente continuo): se leen a simple vista y en la leyenda.
+ * 10–20 series/semana es el rango orientativo de hipertrofia → niveles 4–5.
+ */
+export const STIMULUS_BINS = Object.freeze([
+  { level: 0, min: 0, label: 'Sin estímulo' },
+  { level: 1, min: 0.01, label: '< 3' },
+  { level: 2, min: 3, label: '3–6' },
+  { level: 3, min: 6, label: '6–10' },
+  { level: 4, min: 10, label: '10–20' },
+  { level: 5, min: 20, label: '20+' },
+]);
+
+export const classifyStimulus = (weeklySets) => {
+  const value = Number.isFinite(weeklySets) ? weeklySets : 0;
+  return [...STIMULUS_BINS].reverse().find((bin) => value >= bin.min) ?? STIMULUS_BINS[0];
 };
 
 // Días distintos entrenados (no cantidad de registros: evita premiar registrar de más).

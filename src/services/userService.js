@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { COLLECTIONS } from '../constants/collections';
 import { sanitizeGender, sanitizeUsername } from './validation';
@@ -60,6 +60,16 @@ export const updateProfileData = async (uid, { username, gender }) => {
     { username: cleanUsername, usernameLower: cleanUsername.toLowerCase(), gender: sanitizeGender(gender) },
     { merge: true },
   );
+};
+
+export const syncAccountEmail = async (uid, email) => {
+  await setDoc(doc(db, COLLECTIONS.USERS, uid), { email: email ?? null }, { merge: true });
+};
+
+// Preferencias privadas (colores personalizados): viven en users/{uid} y se sincronizan entre dispositivos.
+export const savePreferences = async (uid, preferences) => {
+  // updateDoc reemplaza el mapa completo (setDoc+merge haría merge profundo y "resetear" no borraría colores).
+  await updateDoc(doc(db, COLLECTIONS.USERS, uid), { preferences, preferencesUpdatedAt: serverTimestamp() });
 };
 
 export const setActiveRoutine = async (uid, routineId) => {

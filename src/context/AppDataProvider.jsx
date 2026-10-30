@@ -1,11 +1,12 @@
-import { createContext, useContext, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useSubscription } from '../hooks/useSubscription';
+import { subscribeToMyGroups } from '../services/groupService';
 import { subscribeToPersonalBests } from '../services/personalBestService';
 import { subscribeToOwnRoutines } from '../services/routineService';
 import { subscribeToProfiles } from '../services/userService';
+import { AppDataContext } from './AppDataContext';
 
 // Datos compartidos por varias pestañas. Elimina el prop drilling de prs/routines/usersDb/t/theme.
-const AppDataContext = createContext(null);
 
 export const AppDataProvider = ({ user, children }) => {
   const profilesState = useSubscription((onData, onError) => subscribeToProfiles(onData, onError), [], []);
@@ -15,6 +16,7 @@ export const AppDataProvider = ({ user, children }) => {
     [user.id],
     [],
   );
+  const groupsState = useSubscription((onData, onError) => subscribeToMyGroups(user.id, onData, onError), [user.id], []);
 
   const value = useMemo(() => {
     const profilesById = Object.fromEntries(profilesState.data.map((profile) => [profile.id, profile]));
@@ -28,14 +30,11 @@ export const AppDataProvider = ({ user, children }) => {
       routines: routinesState.data,
       routinesLoading: routinesState.loading,
       activeRoutine,
+      groups: groupsState.data,
+      groupsLoading: groupsState.loading,
+      groupsError: groupsState.error,
     };
-  }, [user, profilesState.data, bestsState.data, routinesState.data, routinesState.loading]);
+  }, [user, profilesState.data, bestsState.data, routinesState.data, routinesState.loading, groupsState.data, groupsState.loading, groupsState.error]);
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;
-};
-
-export const useAppData = () => {
-  const context = useContext(AppDataContext);
-  if (!context) throw new Error('useAppData debe usarse dentro de <AppDataProvider>');
-  return context;
 };

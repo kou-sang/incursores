@@ -1,0 +1,290 @@
+import { AlertTriangle, KeyRound, Mail, Moon, Palette, RotateCcw, Save, Sun, UserRound } from 'lucide-react';
+import { useState } from 'react';
+import { FieldLabel, InlineSpinner, SectionCard, SegmentedControl } from '../../components/ui';
+import { useAppData } from '../../context/AppDataContext';
+import { useFeedback } from '../../context/FeedbackContext';
+import { contrastRatio, CUSTOM_COLOR_FIELDS, normalizeHex, useTheme } from '../../context/ThemeContext';
+import { changeEmail, changePassword, hasPasswordProvider, updateDisplayName } from '../../services/authService';
+import { savePreferences, updateProfileData } from '../../services/userService';
+import { playClick } from '../../utils/audio';
+import { logError, toUserMessage, ValidationError } from '../../utils/errors';
+
+const MIN_TEXT_CONTRAST = 4.5; // WCAG AA para texto normal
+
+// Estado de envío + errores por formulario (cada sección es independiente).
+const useFormAction = () => {
+  const { notify } = useFeedback();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const submit = async (context, action, successMessage) => {
+    playClick();
+    setError('');
+    setIsSubmitting(true);
+    try {
+      const result = await action();
+      if (successMessage) notify(typeof successMessage === 'function' ? successMessage(result) : successMessage, 'success');
+      return true;
+    } catch (actionError) {
+      if (actionError?.code === 'auth/popup-closed-by-user' || actionError?.code === 'auth/cancelled-popup-request') return false;
+      logError(context, actionError);
+      setError(toUserMessage(actionError));
+      return false;
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+  return { isSubmitting, error, submit };
+};
+
+const FormError = ({ message }) => (message ? <p role="alert" className="text-sm font-semibold text-accent">{message}</p> : null);
+
+const ProfileDataSection = () => {
+  const { user } = useAppData();
+  const { isSubmitting, error, submit } = useFormAction();
+  const [form, setForm] = useState({ username: user.username, gender: user.gender });
+  const isDirty = form.username !== user.username || form.gender !== user.gender;
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    submit('profile:update', async () => {
+      await updateProfileData(user.id, form);
+      // displayName de Auth es secundario (el perfil público es la fuente de verdad): un fallo no revierte.
+      updateDisplayName(form.username.trim()).catch((nameError) => logError('profile:display-name', nameError));
+    }, 'Perfil actualizado');
+  };
+
+  return (
+    <SectionCard title={<span className="flex items-center gap-2"><UserRound size={18} aria-hidden /> Datos del perfil</span>}
+      subtitle="Tu nombre es visible para tus grupos y en el ranking.">
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <div>
+          <FieldLabel htmlFor="profile-username">Nombre de usuario</FieldLabel>
+          <input id="profile-username" className="input" maxLength={24} autoComplete="nickname" value={form.username}
+            onChange={(event) => setForm({ ...form, username: event.target.value })} />
+        </div>
+        <div>
+          <FieldLabel htmlFor="profile-gender">Sexo (define el mapa corporal)</FieldLabel>
+          <select id="profile-gender" className="input" value={form.gender} onChange={(event) => setForm({ ...form, gender: event.target.value })}>
+            <option value="masculino">Masculino</option>
+            <option value="femenino">Femenino</option>
+          </select>
+        </div>
+        <FormError message={error} />
+        <button type="submit" className="btn btn-primary w-full" disabled={isSubmitting || !isDirty}>
+          {isSubmitting ? <><InlineSpinner /> Guardando perfil…</> : 'Guardar cambios'}
+        </button>
+      </form>
+    </SectionCard>
+  );
+};
+
+const EmailSection = () => {
+  const { user } = useAppData();
+  const { isSubmitting, error, submit } = useFormAction();
+  const [form, setForm] = useState({ newEmail: '', currentPassword: '' });
+  const [pendingEmail, setPendingEmail] = useState('');
+  const usesPassword = hasPasswordProvider();
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    const ok = await submit('profile:email', async () => {
+      const email = await changeEmail(form);
+      setPendingEmail(email);
+    });
+    if (ok) setForm({ newEmail: '', currentPassword: '' });
+  };
+
+  return (
+    <SectionCard title={<span className="flex items-center gap-2"><Mail size={18} aria-hidden /> Correo</span>}
+      subtitle={`Actual: ${user.email ?? '—'}`}>
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <div>
+          <FieldLabel htmlFor="profile-new-email">Nuevo correo</FieldLabel>
+          <input id="profile-new-email" type="email" inputMode="email" autoComplete="email" className="input" required
+            value={form.newEmail} onChange={(event) => setForm({ ...form, newEmail: event.target.value })} />
+        </div>
+        {usesPassword && (
+          <div>
+            <FieldLabel htmlFor="profile-email-password">Contraseña actual</FieldLabel>
+            <input id="profile-email-password" type="password" autoComplete="current-password" className="input" required
+              value={form.currentPassword} onChange={(event) => setForm({ ...form, currentPassword: event.target.value })} />
+          </div>
+        )}
+        {!usesPassword && <p className="text-xs text-muted">Se abrirá Google para confirmar que eres tú.</p>}
+        <FormError message={error} />
+        {pendingEmail && (
+          <p role="status" className="badge-good rounded-xl p-3 text-sm font-semibold">
+            Te enviamos un enlace a {pendingEmail}. El cambio se aplica cuando lo confirmes (revisa spam).
+          </p>
+        )}
+        <button type="submit" className="btn btn-primary w-full" disabled={isSubmitting || !form.newEmail}>
+          {isSubmitting ? <><InlineSpinner /> Enviando verificación…</> : 'Cambiar correo'}
+        </button>
+      </form>
+    </SectionCard>
+  );
+};
+
+const PasswordSection = () => {
+  const { isSubmitting, error, submit } = useFormAction();
+  const [form, setForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const usesPassword = hasPasswordProvider();
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    const ok = await submit('profile:password', async () => {
+      if (form.newPassword !== form.confirmPassword) throw new ValidationError('Las contraseñas nuevas no coinciden.');
+      return changePassword(form);
+    }, (result) => (result === 'linked' ? 'Contraseña creada: ya puedes ingresar también con correo.' : 'Contraseña actualizada'));
+    if (ok) setForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  };
+
+  return (
+    <SectionCard title={<span className="flex items-center gap-2"><KeyRound size={18} aria-hidden /> {usesPassword ? 'Cambiar contraseña' : 'Crear contraseña'}</span>}
+      subtitle={usesPassword ? 'Mínimo 6 caracteres.' : 'Tu cuenta usa Google. Puedes agregar una contraseña para ingresar también con correo.'}>
+      <form onSubmit={handleSubmit} className="space-y-3">
+        {/* Campo oculto de usuario: ayuda a los gestores de contraseñas a asociar la credencial correcta. */}
+        <input type="email" autoComplete="username" className="sr-only" tabIndex={-1} aria-hidden readOnly value="" />
+        {usesPassword && (
+          <div>
+            <FieldLabel htmlFor="profile-current-password">Contraseña actual</FieldLabel>
+            <input id="profile-current-password" type="password" autoComplete="current-password" className="input" required
+              value={form.currentPassword} onChange={(event) => setForm({ ...form, currentPassword: event.target.value })} />
+          </div>
+        )}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <FieldLabel htmlFor="profile-new-password">Nueva contraseña</FieldLabel>
+            <input id="profile-new-password" type="password" autoComplete="new-password" minLength={6} className="input" required
+              value={form.newPassword} onChange={(event) => setForm({ ...form, newPassword: event.target.value })} />
+          </div>
+          <div>
+            <FieldLabel htmlFor="profile-confirm-password">Repetir contraseña</FieldLabel>
+            <input id="profile-confirm-password" type="password" autoComplete="new-password" minLength={6} className="input" required
+              aria-invalid={Boolean(form.confirmPassword) && form.confirmPassword !== form.newPassword}
+              value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} />
+          </div>
+        </div>
+        <FormError message={error} />
+        <button type="submit" className="btn btn-primary w-full" disabled={isSubmitting || !form.newPassword}>
+          {isSubmitting ? <><InlineSpinner /> Actualizando contraseña…</> : usesPassword ? 'Cambiar contraseña' : 'Crear contraseña'}
+        </button>
+      </form>
+    </SectionCard>
+  );
+};
+
+// Color picker nativo + campo HEX sincronizados. El HEX se aplica recién cuando es válido.
+const ColorField = ({ field, mode, value, isCustom, onChange, onReset }) => {
+  const [hexDraft, setHexDraft] = useState(value);
+  const [lastValue, setLastValue] = useState(value);
+  if (value !== lastValue) {
+    // Sincroniza el borrador si el color cambió desde afuera (picker, reset, otro dispositivo).
+    setLastValue(value);
+    setHexDraft(value);
+  }
+  const isHexValid = Boolean(normalizeHex(hexDraft));
+  const inputId = `color-${mode}-${field.key}`;
+
+  return (
+    <div className="flex items-center gap-2 py-1.5">
+      <input type="color" aria-label={`${field.label}: selector de color`} className="h-11 w-11 shrink-0 cursor-pointer rounded-lg border divider bg-transparent p-0.5"
+        value={value} onChange={(event) => onChange(event.target.value)} />
+      <div className="min-w-0 flex-1">
+        <label htmlFor={inputId} className="block truncate text-sm font-semibold">{field.label}</label>
+        <span className="text-xs text-muted">{isCustom ? 'Personalizado' : 'Predeterminado'}</span>
+      </div>
+      <input id={inputId} className="input w-28 shrink-0 font-mono uppercase" maxLength={7} spellCheck={false} aria-invalid={!isHexValid}
+        value={hexDraft}
+        onChange={(event) => {
+          setHexDraft(event.target.value);
+          if (normalizeHex(event.target.value)) onChange(event.target.value);
+        }}
+        onBlur={() => !isHexValid && setHexDraft(value)} />
+      <button type="button" className="icon-btn shrink-0" aria-label={`Restablecer ${field.label}`} title="Restablecer" disabled={!isCustom} onClick={onReset}>
+        <RotateCcw size={16} aria-hidden />
+      </button>
+    </div>
+  );
+};
+
+const AppearanceSection = () => {
+  const { user } = useAppData();
+  const { theme, toggleTheme, customColors, setCustomColor, resetCustomColors, replaceCustomColors } = useTheme();
+  const { isSubmitting, error, submit } = useFormAction();
+  const [editMode, setEditMode] = useState(theme);
+  const modeColors = customColors[editMode] ?? {};
+  const resolved = Object.fromEntries(CUSTOM_COLOR_FIELDS.map((field) => [field.key, modeColors[field.key] ?? field.defaults[editMode]]));
+
+  // Avisos de legibilidad: el usuario puede elegir cualquier color, pero se le advierte si el texto no se lee.
+  const contrastChecks = [
+    { label: 'Texto sobre fondo', ratio: contrastRatio(resolved.text, resolved.bg) },
+    { label: 'Texto sobre tarjetas', ratio: contrastRatio(resolved.text, resolved.surface) },
+    { label: 'Texto secundario sobre tarjetas', ratio: contrastRatio(resolved['text-2'], resolved.surface) },
+  ];
+  const failingChecks = contrastChecks.filter(({ ratio }) => ratio !== null && ratio < MIN_TEXT_CONTRAST);
+
+  const resetField = (key) => {
+    playClick();
+    const next = { ...customColors, [editMode]: { ...modeColors } };
+    delete next[editMode][key];
+    replaceCustomColors(next);
+  };
+
+  const handleSave = () =>
+    submit('profile:colors', () => savePreferences(user.id, { ...user.preferences, colors: customColors }), 'Colores guardados en tu cuenta');
+
+  return (
+    <SectionCard title={<span className="flex items-center gap-2"><Palette size={18} aria-hidden /> Apariencia</span>}
+      subtitle="Los cambios se ven al instante en este dispositivo. Guárdalos para usarlos en todos tus dispositivos."
+      actions={
+        <button type="button" className="btn btn-ghost" onClick={() => { playClick(); toggleTheme(); setEditMode(theme === 'dark' ? 'light' : 'dark'); }}>
+          {theme === 'dark' ? <Sun size={16} aria-hidden /> : <Moon size={16} aria-hidden />} Modo {theme === 'dark' ? 'claro' : 'oscuro'}
+        </button>
+      }>
+      <SegmentedControl label="Modo a personalizar" value={editMode} onChange={setEditMode}
+        options={[{ value: 'light', label: 'Colores modo claro' }, { value: 'dark', label: 'Colores modo oscuro' }]} />
+      {editMode !== theme && (
+        <p className="mt-2 text-xs text-muted">Estás editando el modo {editMode === 'dark' ? 'oscuro' : 'claro'}; cámbiate a ese modo para previsualizarlo.</p>
+      )}
+
+      <div className="mt-3 divide-y divide-[var(--border)]">
+        {CUSTOM_COLOR_FIELDS.map((field) => (
+          <ColorField key={`${editMode}-${field.key}`} field={field} mode={editMode} value={resolved[field.key]} isCustom={Boolean(modeColors[field.key])}
+            onChange={(hex) => setCustomColor(editMode, field.key, hex)} onReset={() => resetField(field.key)} />
+        ))}
+      </div>
+
+      {failingChecks.length > 0 && (
+        <div role="status" className="mt-3 flex gap-2 rounded-xl bg-[var(--accent-soft)] p-3 text-sm">
+          <AlertTriangle size={18} className="shrink-0 text-accent" aria-hidden />
+          <p>
+            Contraste bajo (mínimo recomendado {MIN_TEXT_CONTRAST}:1):{' '}
+            {failingChecks.map(({ label, ratio }) => `${label} ${ratio}:1`).join(' · ')}
+          </p>
+        </div>
+      )}
+
+      <FormError message={error} />
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button type="button" className="btn btn-primary flex-1" disabled={isSubmitting} onClick={handleSave}>
+          {isSubmitting ? <><InlineSpinner /> Guardando colores…</> : <><Save size={16} aria-hidden /> Guardar en mi cuenta</>}
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={() => { playClick(); resetCustomColors(editMode); }}>
+          <RotateCcw size={16} aria-hidden /> Restablecer modo {editMode === 'dark' ? 'oscuro' : 'claro'}
+        </button>
+      </div>
+    </SectionCard>
+  );
+};
+
+export const ProfileTab = () => (
+  <div className="grid gap-4 md:gap-6 lg:grid-cols-2">
+    <div className="space-y-4 md:space-y-6">
+      <ProfileDataSection />
+      <EmailSection />
+      <PasswordSection />
+    </div>
+    <AppearanceSection />
+  </div>
+);

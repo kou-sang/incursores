@@ -3,7 +3,7 @@ import { applicationDefault, initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
 // Colecciones que la migración reescribe o usa como fuente.
-const COLLECTIONS_TO_BACKUP = ['users', 'routines', 'prs'];
+const COLLECTIONS_TO_BACKUP = ['users', 'profiles', 'routines', 'workoutLogs', 'personalBests', 'prs'];
 
 initializeApp({ credential: applicationDefault() });
 const db = getFirestore();
