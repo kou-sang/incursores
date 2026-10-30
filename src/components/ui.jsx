@@ -1,4 +1,5 @@
 import { Dumbbell } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { playClick } from '../utils/audio';
 
 export const BRAND_NAME = 'Colossus'; // Antes: "COLOSSUS" en login/desktop e "Incursores" en móvil.
@@ -10,16 +11,49 @@ export const BrandMark = ({ size = 24, showName = true }) => (
   </div>
 );
 
-export const Spinner = ({ label }) => (
-  <div className="flex flex-col items-center gap-3" role="status">
-    <div className="h-10 w-10 animate-spin rounded-full border-2 border-[var(--border)] border-t-[var(--accent)]" />
-    {label && <p className="text-sm font-semibold text-muted">{label}</p>}
+// Pasado este tiempo se avisa que la operación sigue en curso (red lenta / primer arranque en frío).
+const SLOW_LOADING_MS = 4000;
+
+const useIsSlow = (delay = SLOW_LOADING_MS) => {
+  const [isSlow, setIsSlow] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setIsSlow(true), delay);
+    return () => clearTimeout(timer);
+  }, [delay]);
+  return isSlow;
+};
+
+/**
+ * Rueda + texto que explica QUÉ se está haciendo ("Cargando tus rutinas…") y, si tarda,
+ * una aclaración para que el usuario sepa que no se colgó.
+ */
+export const Spinner = ({ label, hint, slowHint = 'Está tardando más de lo normal; seguimos intentando…', size = 'md' }) => {
+  const isSlow = useIsSlow();
+  const dimension = size === 'sm' ? 'h-6 w-6' : 'h-10 w-10';
+  return (
+    <div className="flex flex-col items-center gap-3 text-center" role="status" aria-live="polite">
+      <div className={`${dimension} animate-spin rounded-full border-2 border-[var(--border)] border-t-[var(--accent)]`} aria-hidden />
+      {label && <p className="text-sm font-semibold text-secondary">{label}</p>}
+      {hint && <p className="max-w-xs text-xs text-muted">{hint}</p>}
+      {isSlow && slowHint && <p className="max-w-xs text-xs text-muted">{slowHint}</p>}
+    </div>
+  );
+};
+
+export const LoadingState = ({ label, hint, className = '' }) => (
+  <div className={`card flex justify-center px-4 py-10 ${className}`}>
+    <Spinner label={label} hint={hint} />
   </div>
 );
 
-export const FullScreenLoader = ({ label = 'Cargando…' }) => (
-  <div className="flex min-h-[100dvh] items-center justify-center">
-    <Spinner label={label} />
+// Indicador compacto para botones: el texto del botón describe la acción en curso.
+export const InlineSpinner = () => (
+  <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden />
+);
+
+export const FullScreenLoader = ({ label = 'Cargando…', hint }) => (
+  <div className="flex min-h-[100dvh] items-center justify-center p-4">
+    <Spinner label={label} hint={hint} />
   </div>
 );
 

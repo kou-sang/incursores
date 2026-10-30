@@ -1,12 +1,24 @@
-import { motion } from 'framer-motion';
-import { ArrowLeft } from 'lucide-react';
+import { m } from 'framer-motion';
+import { ArrowLeft, Moon, Sun } from 'lucide-react';
 import { useState } from 'react';
-import { BrandMark, FieldLabel } from '../../components/ui';
+import { BrandMark, FieldLabel, IconButton, InlineSpinner } from '../../components/ui';
+import { useTheme } from '../../context/ThemeContext';
 import { loginWithEmail, loginWithGoogle, registerWithEmail, requestPasswordReset } from '../../services/authService';
 import { playClick } from '../../utils/audio';
 import { logError, toUserMessage } from '../../utils/errors';
 
 const MODES = Object.freeze({ LOGIN: 'login', REGISTER: 'register', FORGOT: 'forgot' });
+// Botón de tema reutilizable en pantallas previas al login (no hay header todavía).
+export const ThemeToggleButton = () => {
+  const { theme, toggleTheme } = useTheme();
+  return (
+    <div className="absolute right-3 top-3">
+      <IconButton label={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'} icon={theme === 'dark' ? Sun : Moon}
+        onClick={() => { playClick(); toggleTheme(); }} />
+    </div>
+  );
+};
+
 const INITIAL_FORM = { username: '', email: '', password: '', gender: 'masculino' };
 
 const GoogleIcon = () => (
@@ -24,6 +36,7 @@ export const LoginScreen = () => {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pendingLabel, setPendingLabel] = useState('');
 
   const updateField = (field) => (event) => setForm((previous) => ({ ...previous, [field]: event.target.value }));
 
@@ -35,10 +48,11 @@ export const LoginScreen = () => {
   };
 
   // Envoltorio único: estado de envío local (sin desmontar el formulario como hacía el spinner global).
-  const runAction = async (context, action) => {
+  const runAction = async (context, action, label = 'Procesando…') => {
     playClick();
     setError('');
     setSuccessMessage('');
+    setPendingLabel(label);
     setIsSubmitting(true);
     try {
       await action();
@@ -53,22 +67,23 @@ export const LoginScreen = () => {
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    if (mode === MODES.LOGIN) runAction('auth:login', () => loginWithEmail(form));
-    if (mode === MODES.REGISTER) runAction('auth:register', () => registerWithEmail(form));
+    if (mode === MODES.LOGIN) runAction('auth:login', () => loginWithEmail(form), 'Verificando tus credenciales…');
+    if (mode === MODES.REGISTER) runAction('auth:register', () => registerWithEmail(form), 'Creando tu cuenta y tu perfil…');
     if (mode === MODES.FORGOT) {
       runAction('auth:reset', async () => {
         await requestPasswordReset(form.email);
         // Mensaje neutro: no revela si el correo existe (evita enumeración de cuentas).
         setSuccessMessage('Si el correo está registrado, recibirás un enlace. Revisa también spam.');
-      });
+      }, 'Enviando enlace de recuperación…');
     }
   };
 
   const submitLabels = { login: 'Ingresar', register: 'Crear perfil', forgot: 'Enviar enlace' };
 
   return (
-    <main className="flex min-h-[100dvh] items-center justify-center p-4">
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="card w-full max-w-md p-6 md:p-8">
+    <main className="relative flex min-h-[100dvh] items-center justify-center p-4">
+      <ThemeToggleButton />
+      <m.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="card w-full max-w-md p-6 md:p-8">
         <div className="mb-1 flex justify-center"><BrandMark size={32} /></div>
         <p className="mb-6 text-center text-sm text-secondary">Registra tus entrenamientos y compite con tus amigos</p>
 
@@ -123,7 +138,7 @@ export const LoginScreen = () => {
           )}
 
           <button type="submit" className="btn btn-primary w-full" disabled={isSubmitting}>
-            {isSubmitting ? 'Procesando…' : submitLabels[mode]}
+            {isSubmitting ? <><InlineSpinner /> {pendingLabel}</> : submitLabels[mode]}
           </button>
         </form>
 
@@ -132,7 +147,7 @@ export const LoginScreen = () => {
             <div className="my-5 flex items-center gap-3 text-xs font-semibold text-muted">
               <span className="h-px flex-1 bg-[var(--border)]" /> o continuar con <span className="h-px flex-1 bg-[var(--border)]" />
             </div>
-            <button type="button" className="btn btn-ghost w-full" disabled={isSubmitting} onClick={() => runAction('auth:google', loginWithGoogle)}>
+            <button type="button" className="btn btn-ghost w-full" disabled={isSubmitting} onClick={() => runAction('auth:google', loginWithGoogle, 'Esperando a Google…')}>
               <GoogleIcon /> Google
             </button>
             <p className="mt-6 border-t divider pt-4 text-center text-sm">
@@ -147,7 +162,7 @@ export const LoginScreen = () => {
             <ArrowLeft size={16} aria-hidden /> Volver
           </button>
         )}
-      </motion.div>
+      </m.div>
     </main>
   );
 };

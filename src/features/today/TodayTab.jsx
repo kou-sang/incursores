@@ -1,19 +1,33 @@
-import { CalendarDays, Check, CloudOff, Flame, Plus, Trophy, Undo2 } from 'lucide-react';
+import { CalendarDays, Check, CloudOff, Flame, Plus, SlidersHorizontal, Trophy, Undo2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { EmptyState, IconButton, SectionCard, StatTile } from '../../components/ui';
+import { EmptyState, IconButton, InlineSpinner, SectionCard, Spinner, StatTile } from '../../components/ui';
 import { QUERY_LIMITS } from '../../constants/collections';
-import { CATALOG_EXERCISE_NAMES, normalizeExerciseName } from '../../constants/exercises';
+import { CATALOG_EXERCISE_NAMES, canonicalExerciseName } from '../../constants/exercises';
 import { useAppData } from '../../context/AppDataContext';
 import { useFeedback } from '../../context/FeedbackContext';
 import { useSubscription } from '../../hooks/useSubscription';
 import { useToday } from '../../hooks/useToday';
 import { createWorkoutLog, deleteWorkoutLog, subscribeToLogs } from '../../services/logService';
 import { parseTargetReps } from '../../services/validation';
-import { playClick, playSuccess } from '../../utils/audio';
+import { playClick } from '../../utils/audio';
 import { addDays, formatLongDate, formatShortDate, getDayKey, parseDateKey, startOfWeek, toDateKey } from '../../utils/dates';
 import { logError, toUserMessage } from '../../utils/errors';
 import { computeWeekStreak, countPlannedDays, countTrainingDays } from '../../utils/metrics';
 import { LogEntryForm } from './LogEntryForm';
+
+// Valores sugeridos para un ejercicio del plan: lo cargado en la rutina tiene prioridad,
+// si no se cargó se usa la última sesión. Todo es opcional.
+const buildPlannedDefaults = (item, lastLog) => {
+  const routineWeight = item.weight === '' || item.weight === null || item.weight === undefined ? null : Number(item.weight);
+  return {
+    exercise: item.exercise,
+    muscle: item.muscle,
+    sets: item.sets ?? '',
+    fallbackSets: item.sets || 3,
+    reps: parseTargetReps(item.reps) ?? lastLog?.reps ?? '',
+    weight: Number.isFinite(routineWeight) ? routineWeight : lastLog?.weight ?? '',
+  };
+};
 
 const formatSetSummary = (log) => {
   if (!log) return null;
@@ -47,14 +61,15 @@ export const TodayTab = ({ onCelebrate }) => {
     return { todayLogs: today, lastLogByExercise: lastByExercise };
   }, [myLogs, todayKey]);
 
-  const plannedItems = activeRoutine?.days[getDayKey(parseDateKey(todayKey))] ?? [];
+  // Memoizado: `?? []` creaba un array nuevo en cada render y anulaba el useMemo de `completion`.
+  const plannedItems = useMemo(() => activeRoutine?.days[getDayKey(parseDateKey(todayKey))] ?? [], [activeRoutine, todayKey]);
 
   // Un ejercicio repetido en el día requiere tantos registros como apariciones.
   const completion = useMemo(() => {
     const remaining = {};
     todayLogs.forEach((log) => { remaining[log.exercise] = (remaining[log.exercise] ?? 0) + 1; });
     return plannedItems.map((item) => {
-      const key = normalizeExerciseName(item.exercise);
+      const key = canonicalExerciseName(item.exercise);
       if (remaining[key] > 0) {
         remaining[key] -= 1;
         return true;
@@ -70,25 +85,36 @@ export const TodayTab = ({ onCelebrate }) => {
 
   const exerciseOptions = useMemo(() => {
     const fromRoutines = routines.flatMap((routine) => Object.values(routine.days).flat().map((item) => item.exercise));
-    return [...new Set([...CATALOG_EXERCISE_NAMES, ...fromRoutines.map(normalizeExerciseName)])].sort();
+    return [...new Set([...CATALOG_EXERCISE_NAMES, ...fromRoutines.map(canonicalExerciseName)])].sort();
   }, [routines]);
 
   const handleLog = async (entry) => {
     try {
-      const currentBest = myBests[normalizeExerciseName(entry.exercise)];
+      const currentBest = myBests[canonicalExerciseName(entry.exercise)];
       const { isPr, committed } = createWorkoutLog({ userId: user.id, username: user.username, entry, currentBest });
       // La escritura es optimista: onSnapshot la muestra al instante; el servidor confirma después (o al volver la red).
       committed.catch((commitError) => {
         logError('log:commit', commitError);
         notify(toUserMessage(commitError, 'No se pudo sincronizar el registro.'), 'error');
       });
-      playSuccess(isPr);
-      onCelebrate(isPr);
+      onCelebrate(isPr); // Festejo aleatorio (1 de 5) con su propio sonido; respeta el botón de silencio
       notify(isPr ? '¡Nuevo récord personal!' : 'Ejercicio registrado', 'success');
       setOpenFormKey(null);
     } catch (logErrorInstance) {
       logError('log:create', logErrorInstance);
       notify(toUserMessage(logErrorInstance), 'error');
+    }
+  };
+
+  const [quickLoggingId, setQuickLoggingId] = useState(null);
+  const handleQuickComplete = async (item, lastLog) => {
+    playClick();
+    setQuickLoggingId(item.id);
+    try {
+      const { exercise, muscle, sets, reps, weight } = buildPlannedDefaults(item, lastLog);
+      await handleLog({ exercise, muscle, sets, reps, weight });
+    } finally {
+      setQuickLoggingId(null);
     }
   };
 
@@ -146,7 +172,7 @@ export const TodayTab = ({ onCelebrate }) => {
         <SectionCard title="Plan de hoy">
           <ul className="divide-y divide-[var(--border)]">
             {plannedItems.map((item, index) => {
-              const exerciseKey = normalizeExerciseName(item.exercise);
+              const exerciseKey = canonicalExerciseName(item.exercise);
               const isDone = completion[index];
               const lastLog = lastLogByExercise[exerciseKey];
               const best = myBests[exerciseKey];
@@ -158,6 +184,7 @@ export const TodayTab = ({ onCelebrate }) => {
                       <h4 className="truncate font-bold">{item.exercise}</h4>
                       <p className="text-sm text-secondary">
                         {item.sets} series{item.reps && ` × ${item.reps} reps`}
+                        {item.weight !== '' && item.weight !== null && item.weight !== undefined && ` · ${item.weight} kg`}
                       </p>
                       {(lastLog || best) && (
                         <p className="mt-0.5 text-xs text-muted">
@@ -170,20 +197,19 @@ export const TodayTab = ({ onCelebrate }) => {
                     {isDone ? (
                       <span className="badge badge-good shrink-0"><Check size={14} aria-hidden /> Hecho</span>
                     ) : (
-                      <button type="button" className="btn btn-outline shrink-0" aria-expanded={isOpen} onClick={() => toggleForm(item.id)}>
-                        Registrar
-                      </button>
+                      <div className="flex shrink-0 items-center gap-1">
+                        {/* Un toque: registra con los valores sugeridos (rutina → última sesión), sin abrir el formulario. */}
+                        <button type="button" className="btn btn-outline" disabled={quickLoggingId === item.id}
+                          onClick={() => handleQuickComplete(item, lastLog)}>
+                          {quickLoggingId === item.id ? <InlineSpinner /> : <Check size={16} aria-hidden />} Hecho
+                        </button>
+                        <IconButton label={`Ajustar kg, series y reps de ${item.exercise}`} icon={SlidersHorizontal} onClick={() => toggleForm(item.id)} />
+                      </div>
                     )}
                   </div>
                   {isOpen && !isDone && (
                     <LogEntryForm
-                      defaults={{
-                        exercise: item.exercise,
-                        muscle: item.muscle,
-                        sets: item.sets,
-                        reps: parseTargetReps(item.reps) ?? lastLog?.reps ?? '',
-                        weight: lastLog?.weight ?? '',
-                      }}
+                      defaults={buildPlannedDefaults(item, lastLog)}
                       onSubmit={handleLog}
                       onCancel={() => toggleForm(item.id)}
                     />
@@ -197,7 +223,7 @@ export const TodayTab = ({ onCelebrate }) => {
 
       <SectionCard
         title="Registrado hoy"
-        subtitle={todayLogs.length ? `${todayLogs.length} ejercicio(s)` : 'Aún no registraste nada hoy'}
+        subtitle={logsState.loading ? 'Sincronizando…' : todayLogs.length ? `${todayLogs.length} ejercicio(s)` : 'Aún no registraste nada hoy'}
         actions={
           <button type="button" className="btn btn-ghost" aria-expanded={openFormKey === 'free'} onClick={() => toggleForm('free')}>
             <Plus size={16} aria-hidden /> Ejercicio libre
@@ -205,7 +231,12 @@ export const TodayTab = ({ onCelebrate }) => {
         }
       >
         {openFormKey === 'free' && (
-          <LogEntryForm defaults={{ sets: 3 }} showExerciseField exerciseOptions={exerciseOptions} onSubmit={handleLog} onCancel={() => toggleForm('free')} />
+          <LogEntryForm defaults={{ fallbackSets: 3 }} showExerciseField exerciseOptions={exerciseOptions} onSubmit={handleLog} onCancel={() => toggleForm('free')} />
+        )}
+        {logsState.loading && (
+          <div className="py-4">
+            <Spinner size="sm" label="Cargando tu historial de los últimos 60 días…" hint="Lo usamos para marcar lo hecho hoy y sugerir tu último peso." />
+          </div>
         )}
         {todayLogs.length > 0 && (
           <ul className="mt-2 divide-y divide-[var(--border)]">

@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { COLLECTIONS, QUERY_LIMITS } from '../constants/collections';
+import { canonicalExerciseName } from '../constants/exercises';
 import { toDateKey, toJsDate } from '../utils/dates';
 import { ValidationError } from '../utils/errors';
 import { estimateOneRepMax } from '../utils/metrics';
@@ -24,7 +25,8 @@ const mapLogDoc = (snapshot) => {
     id: snapshot.id,
     userId: data.userId,
     username: data.username ?? '',
-    exercise: data.exercise,
+    exercise: canonicalExerciseName(data.exercise), // Logs viejos con alias ("ALT CON MANCUERNA") se unifican
+    storedExercise: data.exercise, // Nombre tal cual está en Firestore (necesario para borrar el PR correcto)
     muscle: data.muscle ?? null,
     sets: data.sets ?? null,
     reps: data.reps ?? null,
@@ -44,7 +46,7 @@ const mapLogDoc = (snapshot) => {
  * registro histórico de TODOS los usuarios (crecimiento lineal e ilimitado del costo).
  */
 export const subscribeToLogs = (
-  { since, userIds, onlyRecords = false, maxResults = QUERY_LIMITS.MAX_LOGS_PER_QUERY },
+  { since, until = null, userIds, onlyRecords = false, maxResults = QUERY_LIMITS.MAX_LOGS_PER_QUERY },
   onData,
   onError,
 ) => {
@@ -60,6 +62,7 @@ export const subscribeToLogs = (
   if (userIds) constraints.push(where('userId', 'in', userIds));
   if (onlyRecords) constraints.push(where('isPr', '==', true)); // Feed de PRs: lee solo récords, no todo el historial
   if (since) constraints.push(where('performedAt', '>=', Timestamp.fromDate(since)));
+  if (until) constraints.push(where('performedAt', '<=', Timestamp.fromDate(until))); // Rango personalizado de analíticas
   constraints.push(orderBy('performedAt', 'desc'), limit(maxResults));
 
   return onSnapshot(
@@ -117,7 +120,7 @@ export const deleteWorkoutLog = (log, currentBest) => {
   if (log.isPr && currentBest?.logId === log.id) {
     batch.update(
       doc(db, COLLECTIONS.PERSONAL_BESTS, log.userId),
-      new FieldPath('bests', log.exercise),
+      new FieldPath('bests', log.storedExercise ?? log.exercise),
       log.previousBest ?? deleteField(),
     );
   }

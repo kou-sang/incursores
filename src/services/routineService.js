@@ -19,7 +19,8 @@ import { sanitizeRoutineItem } from './validation';
 const createItemId = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 
-export const createEmptyRoutineItem = () => ({ id: createItemId(), exercise: '', sets: 3, reps: '10', muscle: null });
+// Series/reps/kg vacíos = opcionales: al guardar se aplican los valores por defecto (3 × 10, sin kg).
+export const createEmptyRoutineItem = () => ({ id: createItemId(), exercise: '', sets: '', reps: '', weight: '', muscle: null });
 
 export const createEmptyRoutine = () => ({
   id: null,
@@ -39,6 +40,7 @@ export const normalizeRoutine = (id, data) => {
         exercise: item.exercise ?? item.ejercicio ?? '',
         sets: Number(item.sets ?? item.series) || 3,
         reps: String(item.reps ?? ''),
+        weight: item.weight ?? '', // kg objetivo opcional (rutinas viejas no lo tienen)
         muscle: item.muscle ?? null,
       })),
     ]),

@@ -1,15 +1,20 @@
 import { X } from 'lucide-react';
 import { useId, useState } from 'react';
+import { ExercisePicker } from '../../components/ExercisePicker';
+import { InlineSpinner } from '../../components/ui';
 
-// Formulario compacto de registro: peso + reps + series. Prellenado con la última sesión
-// para fomentar sobrecarga progresiva (el original solo pedía kg opcional, sin reps).
+/*
+ * Registro de un ejercicio: kg, reps y series son OPCIONALES.
+ * Llegan prellenados (rutina → última sesión) y, si el usuario los borra, se usa el valor sugerido
+ * que se muestra como placeholder. El original pedía kg y no reps → los PR no eran comparables.
+ */
 export const LogEntryForm = ({ defaults, onSubmit, onCancel, showExerciseField = false, exerciseOptions = [] }) => {
   const formId = useId();
   const [values, setValues] = useState({
     exercise: defaults.exercise ?? '',
     weight: defaults.weight ?? '',
     reps: defaults.reps ?? '',
-    sets: defaults.sets ?? 3,
+    sets: defaults.sets ?? '',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -20,7 +25,12 @@ export const LogEntryForm = ({ defaults, onSubmit, onCancel, showExerciseField =
     if (isSubmitting) return; // Guard contra doble envío (antes generaba registros duplicados)
     setIsSubmitting(true);
     try {
-      await onSubmit({ ...values, muscle: defaults.muscle });
+      // Vacío = valor sugerido de la rutina (series) o "sin dato" (kg/reps): nada es obligatorio.
+      await onSubmit({
+        ...values,
+        sets: values.sets === '' ? defaults.fallbackSets ?? '' : values.sets,
+        muscle: defaults.muscle,
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -28,8 +38,8 @@ export const LogEntryForm = ({ defaults, onSubmit, onCancel, showExerciseField =
 
   const fields = [
     { key: 'weight', label: 'Peso (kg)', inputMode: 'decimal', step: '0.5', placeholder: 'Opcional' },
-    { key: 'reps', label: 'Reps', inputMode: 'numeric', step: '1', placeholder: '—' },
-    { key: 'sets', label: 'Series', inputMode: 'numeric', step: '1', placeholder: '1' },
+    { key: 'reps', label: 'Reps', inputMode: 'numeric', step: '1', placeholder: 'Opcional' },
+    { key: 'sets', label: 'Series', inputMode: 'numeric', step: '1', placeholder: String(defaults.fallbackSets ?? 1) },
   ];
 
   return (
@@ -37,10 +47,8 @@ export const LogEntryForm = ({ defaults, onSubmit, onCancel, showExerciseField =
       {showExerciseField && (
         <div>
           <label htmlFor={`${formId}-exercise`} className="mb-1 block text-xs font-bold text-secondary">Ejercicio</label>
-          <input id={`${formId}-exercise`} className="input uppercase" list={`${formId}-options`} required value={values.exercise} onChange={update('exercise')} />
-          <datalist id={`${formId}-options`}>
-            {exerciseOptions.map((option) => <option key={option} value={option} />)}
-          </datalist>
+          <ExercisePicker id={`${formId}-exercise`} required value={values.exercise} extraNames={exerciseOptions}
+            onChange={(exercise) => setValues((previous) => ({ ...previous, exercise }))} />
         </div>
       )}
       <div className="grid grid-cols-3 gap-2">
@@ -62,7 +70,9 @@ export const LogEntryForm = ({ defaults, onSubmit, onCancel, showExerciseField =
         ))}
       </div>
       <div className="flex gap-2">
-        <button type="submit" className="btn btn-primary flex-1" disabled={isSubmitting}>Guardar</button>
+        <button type="submit" className="btn btn-primary flex-1" disabled={isSubmitting}>
+          {isSubmitting ? <><InlineSpinner /> Guardando…</> : 'Guardar'}
+        </button>
         <button type="button" className="btn btn-ghost" onClick={onCancel} aria-label="Cancelar">
           <X size={18} aria-hidden />
         </button>

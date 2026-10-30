@@ -5,6 +5,15 @@ export const COLLECTIONS = Object.freeze({
   ROUTINES: 'routines',
   LOGS: 'workoutLogs', // Reemplaza a la colección legada 'prs'
   PERSONAL_BESTS: 'personalBests', // Agregado 1 doc/usuario: evita leer todo el historial para rankings
+  GROUPS: 'groups', // Grupos de amigos: delimitan quién aparece en Analíticas
+  GROUP_INVITES: 'groupInvites', // Índice código de invitación → groupId
+});
+
+export const GROUP_LIMITS = Object.freeze({
+  MAX_MEMBERS: 30, // = límite del operador 'in' → una sola consulta de logs por grupo
+  CODE_LENGTH: 8,
+  NAME_MAX: 40,
+  DESCRIPTION_MAX: 160,
 });
 
 export const GENDERS = Object.freeze(['masculino', 'femenino']);

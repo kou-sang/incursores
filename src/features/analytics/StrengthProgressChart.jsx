@@ -1,5 +1,6 @@
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { ChartLegend, ChartTooltip, useAxisProps } from '../../components/charts';
+import { ChartLegend, ChartTooltip } from '../../components/charts';
+import { useAxisProps } from '../../components/useAxisProps';
 import { useTheme } from '../../context/ThemeContext';
 import { formatShortDate } from '../../utils/dates';
 

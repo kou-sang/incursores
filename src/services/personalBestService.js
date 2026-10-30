@@ -1,6 +1,7 @@
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { COLLECTIONS } from '../constants/collections';
+import { canonicalExerciseName } from '../constants/exercises';
 import { toJsDate } from '../utils/dates';
 
 // 1 documento por usuario con su mejor marca por ejercicio.
@@ -12,12 +13,16 @@ export const subscribeToPersonalBests = (onData, onError) =>
       const byUser = {};
       snapshot.docs.forEach((bestDoc) => {
         const data = bestDoc.data();
-        const bests = Object.fromEntries(
-          Object.entries(data.bests ?? {}).map(([exercise, best]) => [
-            exercise,
-            { ...best, achievedAt: toJsDate(best.achievedAt) },
-          ]),
-        );
+        // Unifica alias (nombres viejos) conservando la mejor marca por ejercicio canónico.
+        const bests = {};
+        Object.entries(data.bests ?? {}).forEach(([storedName, best]) => {
+          if (!best) return;
+          const exercise = canonicalExerciseName(storedName);
+          const current = bests[exercise];
+          if (!current || (best.e1rm ?? 0) > (current.e1rm ?? 0)) {
+            bests[exercise] = { ...best, storedName, achievedAt: toJsDate(best.achievedAt) };
+          }
+        });
         byUser[bestDoc.id] = { userId: bestDoc.id, username: data.username ?? '', bests };
       });
       onData(byUser);
