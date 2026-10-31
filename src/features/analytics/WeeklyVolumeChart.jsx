@@ -2,13 +2,13 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { ChartLegend, ChartTooltip } from '../../components/charts';
 import { useAxisProps } from '../../components/useAxisProps';
 import { useTheme } from '../../context/ThemeContext';
-import { formatShortDate } from '../../utils/dates';
+import { describeWeek, formatShortDate } from '../../utils/dates';
 
 const formatTonnage = (value) => (value >= 1000 ? `${Math.round(value / 100) / 10} t` : `${Math.round(value)} kg`);
 
 // Tonelaje semanal (series × reps × kg). Reemplaza al "Volumen" original, que en realidad
 // contaba cuántos ejercicios se registraron por día.
-export const WeeklyVolumeChart = ({ rows, users }) => {
+export const WeeklyVolumeChart = ({ rows, users, rangeStart, rangeEnd }) => {
   const { chart } = useTheme();
   const { grid, axis } = useAxisProps();
   const hasData = rows.some((row) => users.some((user) => row[user.userId] > 0));
@@ -28,7 +28,7 @@ export const WeeklyVolumeChart = ({ rows, users }) => {
             <YAxis {...axis} width={48} tickFormatter={formatTonnage} />
             <Tooltip
               cursor={{ fill: chart.grid, opacity: 0.4 }}
-              content={<ChartTooltip labelFormatter={(_, payload) => `Semana del ${formatShortDate(payload?.[0]?.payload.time)}`} valueFormatter={formatTonnage} />}
+              content={<ChartTooltip labelFormatter={(_, payload) => describeWeek(payload?.[0]?.payload.time, rangeStart, rangeEnd)} valueFormatter={formatTonnage} />}
             />
             {users.map((user) => (
               <Bar key={user.userId} dataKey={user.userId} name={user.name} fill={user.color} radius={[4, 4, 0, 0]} maxBarSize={28} isAnimationActive={false} />

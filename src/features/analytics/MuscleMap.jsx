@@ -113,28 +113,35 @@ const RecencyLegend = () => {
  * Mapa corporal interactivo. Modo "Estímulo": verde más intenso = más series efectivas/semana
  * (el % de cada ejercicio por músculo suma proporcionalmente). Modo "Recuperación": días desde el último estímulo.
  */
-export const MuscleMap = ({ gender, mode, weeklySetsByMuscle, lastTrainedByMuscle, selectedMuscle, enabledMuscles, onSelect }) => {
+/*
+ * `colorFor`, `describe`, `legend` y `hint` opcionales permiten reutilizar el mapa fuera de Analíticas
+ * (p. ej. la ficha de un ejercicio pinta el % de estímulo de cada músculo).
+ */
+export const MuscleMap = ({
+  gender, mode, weeklySetsByMuscle = {}, lastTrainedByMuscle = {}, selectedMuscle, enabledMuscles, onSelect,
+  colorFor: customColorFor, describe: customDescribe, legend, hint = 'Toca un músculo para generar su gráfico detallado.',
+}) => {
   const { chart } = useTheme();
   const figures = BODY_FIGURES[gender] ?? BODY_FIGURES.masculino;
 
   const recencyFor = (muscleId) => classifyRecency(lastTrainedByMuscle[muscleId]?.date);
-  const colorFor = (muscleId) =>
+  const colorFor = customColorFor ?? ((muscleId) =>
     mode === 'recency'
       ? interpolateColorStops(chart.recencyStops, recencyDays(recencyFor(muscleId)))
-      : chart.stimulus[classifyStimulus(weeklySetsByMuscle[muscleId]).level];
-  const describe = (muscleId) =>
-    describeMuscle(muscleId, { mode, weeklySets: weeklySetsByMuscle[muscleId], recency: recencyFor(muscleId) });
+      : chart.stimulus[classifyStimulus(weeklySetsByMuscle[muscleId]).level]);
+  const describe = customDescribe ?? ((muscleId) =>
+    describeMuscle(muscleId, { mode, weeklySets: weeklySetsByMuscle[muscleId], recency: recencyFor(muscleId) }));
 
   const figureProps = { colorFor, selectedMuscle, enabledMuscles, describe, onSelect };
 
   return (
     <div>
-      <div className="mb-3">{mode === 'recency' ? <RecencyLegend /> : <StimulusLegend />}</div>
+      <div className="mb-3">{legend ?? (mode === 'recency' ? <RecencyLegend /> : <StimulusLegend />)}</div>
       <div className="flex justify-center gap-2 md:gap-6">
         <BodyFigure figure={figures.frente} title="Frente" {...figureProps} />
         <BodyFigure figure={figures.espalda} title="Espalda" {...figureProps} />
       </div>
-      {!selectedMuscle && <p className="mt-2 text-center text-xs text-muted">Toca un músculo para generar su gráfico detallado.</p>}
+      {!selectedMuscle && hint && <p className="mt-2 text-center text-xs text-muted">{hint}</p>}
     </div>
   );
 };

@@ -4,10 +4,14 @@ import {
   CHART_TOKENS,
   CUSTOM_COLORS_KEY,
   CUSTOM_KEYS,
+  MAX_RECENT_COLORS,
   normalizeHex,
+  RECENT_COLORS_KEY,
   readInitialTheme,
   readStoredCustomColors,
+  readStoredRecentColors,
   sanitizeCustomColors,
+  sanitizeRecentColors,
   THEME_STORAGE_KEY,
   ThemeContext,
 } from './ThemeContext';
@@ -15,6 +19,27 @@ import {
 export const ThemeProvider = ({ children }) => {
   const [theme, setTheme] = useState(readInitialTheme);
   const [customColors, setCustomColors] = useState(readStoredCustomColors);
+  // Últimos colores personalizados elegidos (más reciente primero): se ofrecen como atajos en el selector.
+  const [recentColors, setRecentColors] = useState(readStoredRecentColors);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(RECENT_COLORS_KEY, JSON.stringify(recentColors));
+    } catch {
+      // Persistencia opcional.
+    }
+  }, [recentColors]);
+
+  const rememberColor = useCallback((value) => {
+    const hex = normalizeHex(value);
+    if (!hex) return;
+    setRecentColors((current) => (current[0] === hex ? current : [hex, ...current.filter((item) => item !== hex)].slice(0, MAX_RECENT_COLORS)));
+  }, []);
+
+  const replaceRecentColors = useCallback((raw) => {
+    const next = sanitizeRecentColors(raw);
+    setRecentColors((current) => (JSON.stringify(current) === JSON.stringify(next) ? current : next));
+  }, []);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -68,8 +93,11 @@ export const ThemeProvider = ({ children }) => {
   }, [theme, customColors]);
 
   const value = useMemo(
-    () => ({ theme, toggleTheme, chart, customColors, setCustomColor, resetCustomColors, replaceCustomColors }),
-    [theme, toggleTheme, chart, customColors, setCustomColor, resetCustomColors, replaceCustomColors],
+    () => ({
+      theme, toggleTheme, chart, customColors, setCustomColor, resetCustomColors, replaceCustomColors,
+      recentColors, rememberColor, replaceRecentColors,
+    }),
+    [theme, toggleTheme, chart, customColors, setCustomColor, resetCustomColors, replaceCustomColors, recentColors, rememberColor, replaceRecentColors],
   );
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 };

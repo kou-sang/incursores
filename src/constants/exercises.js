@@ -142,7 +142,7 @@ const CATALOG_ENTRIES = [
   ['ELEVACION DE RODILLAS EN PARALELAS', 'CORE', { ra: 55, ob: 20, rf: 20, tla: 5 }, ['CAPITAN', 'SILLA ROMANA', 'ELEVACION DE RODILLAS']],
   ['RUEDA ABDOMINAL', 'CORE', { ra: 55, ob: 15, da: 15, tl: 5, se: 10 }, ['RUEDITA', 'AB WHEEL']],
   ['RUSSIAN TWIST', 'CORE', { ob: 60, ra: 35, rf: 5 }, ['GIROS RUSOS', 'GIRO RUSO']],
-  ['BICICLETA', 'CORE', { ra: 45, ob: 45, rf: 10 }, ['ABDOMINALES BICICLETA', 'CRUNCH BICICLETA']],
+  ['CRUNCH BICICLETA', 'CORE', { ra: 45, ob: 45, rf: 10 }, ['ABDOMINALES BICICLETA', 'BICICLETA']],
   ['LEÑADOR EN POLEA', 'CORE', { ob: 65, ra: 15, dan: 10, se: 10 }, ['LENADOR', 'WOODCHOPPER']],
   ['PALLOF PRESS', 'CORE', { ob: 60, ra: 30, se: 10 }, ['PRESS PALLOF', 'ANTIRROTACION']],
 
@@ -277,11 +277,16 @@ export const normalizeExerciseName = (rawName) => {
   if (typeof rawName !== 'string') return '';
   return rawName
     .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
+    // La Ñ se conserva ("CURL ARAÑA", no "CURL ARANA"): se recompone antes de quitar el resto de los diacríticos.
+    .replace(/([nN])\u0303/g, (_, letter) => (letter === 'n' ? 'ñ' : 'Ñ'))
+    .replace(/[\u0300-\u036f]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
     .toUpperCase();
 };
+
+const withoutEnyeFor = (name, aliasList) =>
+  [name, ...aliasList.map(normalizeExerciseName)].filter((label) => label.includes('Ñ')).map((label) => label.replace(/Ñ/g, 'N'));
 
 const CATEGORY_IDS = new Set(CATEGORIES.map(({ id }) => id));
 
@@ -307,9 +312,11 @@ const buildCatalog = () => {
     if (total !== 100) problems.push(`${name}: la distribución suma ${total}`);
 
     const primaryMuscle = Object.entries(distribution).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'otros';
-    catalog[name] = { name, category, distribution, primaryMuscle, aliases: aliasList.map(normalizeExerciseName) };
+    catalog[name] = { name, category, distribution, primaryMuscle, aliases: [...new Set([...aliasList.map(normalizeExerciseName), ...withoutEnyeFor(name, aliasList)])] };
 
-    aliasList.forEach((alias) => {
+    // Los nombres con Ñ se guardaban antes sin ella ("CURL DE MUNECA"): se agregan como alias para no perder historial.
+    const withoutEnye = withoutEnyeFor(name, aliasList);
+    [...aliasList, ...withoutEnye].forEach((alias) => {
       const key = normalizeExerciseName(alias);
       if (key !== name) aliases[key] = name;
     });

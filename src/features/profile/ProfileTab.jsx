@@ -1,10 +1,11 @@
-import { AlertTriangle, KeyRound, Mail, Moon, Palette, RotateCcw, Save, Sun, UserRound } from 'lucide-react';
-import { useState } from 'react';
+import { AlertTriangle, CheckCircle2, KeyRound, Mail, Moon, Palette, RotateCcw, Sun, UserRound } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { version as APP_VERSION } from '../../../package.json';
+import { ColorPicker } from '../../components/ColorPicker';
 import { FieldLabel, InlineSpinner, SectionCard, SegmentedControl } from '../../components/ui';
 import { useAppData } from '../../context/AppDataContext';
 import { useFeedback } from '../../context/FeedbackContext';
-import { contrastRatio, CUSTOM_COLOR_FIELDS, normalizeHex, useTheme } from '../../context/ThemeContext';
+import { colorsKey, contrastRatio, CUSTOM_COLOR_FIELDS, markLocalColorsWrite, sanitizeRecentColors, useTheme } from '../../context/ThemeContext';
 import { changeEmail, changePassword, hasPasswordProvider, updateDisplayName } from '../../services/authService';
 import { savePreferences, updateProfileData } from '../../services/userService';
 import { playClick } from '../../utils/audio';
@@ -175,44 +176,68 @@ const PasswordSection = () => {
   );
 };
 
-// Color picker nativo + campo HEX sincronizados. El HEX se aplica recién cuando es válido.
-const ColorField = ({ field, mode, value, isCustom, onChange, onReset }) => {
-  const [hexDraft, setHexDraft] = useState(value);
-  const [lastValue, setLastValue] = useState(value);
-  if (value !== lastValue) {
-    // Sincroniza el borrador si el color cambió desde afuera (picker, reset, otro dispositivo).
-    setLastValue(value);
-    setHexDraft(value);
-  }
-  const isHexValid = Boolean(normalizeHex(hexDraft));
-  const inputId = `color-${mode}-${field.key}`;
+const AUTOSAVE_DELAY_MS = 1200;
 
-  return (
-    <div className="flex items-center gap-2 py-1.5">
-      <input type="color" aria-label={`${field.label}: selector de color`} className="h-11 w-11 shrink-0 cursor-pointer rounded-lg border divider bg-transparent p-0.5"
-        value={value} onChange={(event) => onChange(event.target.value)} />
-      <div className="min-w-0 flex-1">
-        <label htmlFor={inputId} className="block truncate text-sm font-semibold">{field.label}</label>
-        <span className="text-xs text-muted">{isCustom ? 'Personalizado' : 'Predeterminado'}</span>
-      </div>
-      <input id={inputId} className="input w-28 shrink-0 font-mono uppercase" maxLength={7} spellCheck={false} aria-invalid={!isHexValid}
-        value={hexDraft}
-        onChange={(event) => {
-          setHexDraft(event.target.value);
-          if (normalizeHex(event.target.value)) onChange(event.target.value);
-        }}
-        onBlur={() => !isHexValid && setHexDraft(value)} />
-      <button type="button" className="icon-btn shrink-0" aria-label={`Restablecer ${field.label}`} title="Restablecer" disabled={!isCustom} onClick={onReset}>
-        <RotateCcw size={16} aria-hidden />
-      </button>
-    </div>
-  );
+/*
+ * Autoguardado de colores y recientes en la cuenta (antes había que tocar "Guardar" y, si no, al recargar
+ * los colores de la cuenta pisaban los últimos elegidos). Debounce para no escribir en cada arrastre del selector;
+ * si se sale de Perfil con cambios pendientes, se guardan igual.
+ */
+const useColorAutosave = () => {
+  const { user } = useAppData();
+  const { customColors, recentColors } = useTheme();
+  const [status, setStatus] = useState('saved'); // 'saved' | 'pending' | 'error'
+  const pendingSaveRef = useRef(null);
+
+  const localKey = JSON.stringify({ colors: colorsKey(customColors), recent: sanitizeRecentColors(recentColors) });
+  const remoteKey = JSON.stringify({ colors: colorsKey(user.preferences?.colors), recent: sanitizeRecentColors(user.preferences?.recentColors) });
+  const isSynced = localKey === remoteKey;
+
+  const userRef = useRef(user);
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
+  useEffect(() => {
+    if (isSynced) {
+      pendingSaveRef.current = null;
+      setStatus('saved');
+      return undefined;
+    }
+    const save = async () => {
+      pendingSaveRef.current = null;
+      const { colors, recent } = JSON.parse(localKey);
+      try {
+        markLocalColorsWrite(colors);
+        await savePreferences(userRef.current.id, { ...userRef.current.preferences, colors: JSON.parse(colors), recentColors: recent });
+        setStatus('saved');
+      } catch (saveError) {
+        logError('profile:colors-autosave', saveError);
+        setStatus('error');
+      }
+    };
+    pendingSaveRef.current = save;
+    setStatus('pending');
+    const timer = setTimeout(save, AUTOSAVE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [localKey, isSynced]);
+
+  // Al salir de Perfil: guarda lo pendiente en vez de perderlo (se lee el ref al desmontar a propósito).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => () => pendingSaveRef.current?.(), []);
+
+  return status;
+};
+
+const AutosaveStatus = ({ status }) => {
+  if (status === 'pending') return <span className="flex items-center gap-1.5 text-xs font-semibold text-muted"><InlineSpinner /> Guardando en tu cuenta…</span>;
+  if (status === 'error') return <span className="flex items-center gap-1.5 text-xs font-semibold text-accent"><AlertTriangle size={14} aria-hidden /> No se pudo guardar; se reintentará con el próximo cambio.</span>;
+  return <span className="flex items-center gap-1.5 text-xs font-semibold text-muted"><CheckCircle2 size={14} aria-hidden /> Guardado en tu cuenta</span>;
 };
 
 const AppearanceSection = () => {
-  const { user } = useAppData();
-  const { theme, toggleTheme, customColors, setCustomColor, resetCustomColors, replaceCustomColors } = useTheme();
-  const { isSubmitting, error, submit } = useFormAction();
+  const { theme, toggleTheme, customColors, setCustomColor, resetCustomColors, replaceCustomColors, recentColors, rememberColor } = useTheme();
+  const saveStatus = useColorAutosave();
   const [editMode, setEditMode] = useState(theme);
   const modeColors = customColors[editMode] ?? {};
   const resolved = Object.fromEntries(CUSTOM_COLOR_FIELDS.map((field) => [field.key, modeColors[field.key] ?? field.defaults[editMode]]));
@@ -232,27 +257,32 @@ const AppearanceSection = () => {
     replaceCustomColors(next);
   };
 
-  const handleSave = () =>
-    submit('profile:colors', () => savePreferences(user.id, { ...user.preferences, colors: customColors }), 'Colores guardados en tu cuenta');
-
   return (
     <SectionCard title={<span className="flex items-center gap-2"><Palette size={18} aria-hidden /> Apariencia</span>}
-      subtitle="Los cambios se ven al instante en este dispositivo. Guárdalos para usarlos en todos tus dispositivos."
+      subtitle="Los cambios se ven al instante y se guardan solos en tu cuenta (todos tus dispositivos)."
       actions={
         <button type="button" className="btn btn-ghost" onClick={() => { playClick(); toggleTheme(); setEditMode(theme === 'dark' ? 'light' : 'dark'); }}>
           {theme === 'dark' ? <Sun size={16} aria-hidden /> : <Moon size={16} aria-hidden />} Modo {theme === 'dark' ? 'claro' : 'oscuro'}
         </button>
       }>
       <SegmentedControl label="Modo a personalizar" value={editMode} onChange={setEditMode}
-        options={[{ value: 'light', label: 'Colores modo claro' }, { value: 'dark', label: 'Colores modo oscuro' }]} />
+        options={[{ value: 'light', label: 'Modo claro' }, { value: 'dark', label: 'Modo oscuro' }]} />
       {editMode !== theme && (
         <p className="mt-2 text-xs text-muted">Estás editando el modo {editMode === 'dark' ? 'oscuro' : 'claro'}; cámbiate a ese modo para previsualizarlo.</p>
       )}
 
       <div className="mt-3 divide-y divide-[var(--border)]">
         {CUSTOM_COLOR_FIELDS.map((field) => (
-          <ColorField key={`${editMode}-${field.key}`} field={field} mode={editMode} value={resolved[field.key]} isCustom={Boolean(modeColors[field.key])}
-            onChange={(hex) => setCustomColor(editMode, field.key, hex)} onReset={() => resetField(field.key)} />
+          <ColorPicker
+            key={`${editMode}-${field.key}`}
+            label={field.label}
+            value={resolved[field.key]}
+            isCustom={Boolean(modeColors[field.key])}
+            recentColors={recentColors}
+            onChange={(hex) => setCustomColor(editMode, field.key, hex)}
+            onCommit={rememberColor}
+            onReset={() => resetField(field.key)}
+          />
         ))}
       </div>
 
@@ -261,16 +291,13 @@ const AppearanceSection = () => {
           <AlertTriangle size={18} className="shrink-0 text-accent" aria-hidden />
           <p>
             Contraste bajo (mínimo recomendado {MIN_TEXT_CONTRAST}:1):{' '}
-            {failingChecks.map(({ label, ratio }) => `${label} ${ratio}:1`).join(' · ')}
+            {failingChecks.map(({ label, ratio }) => `${label} ${ratio}:1`).join(', ')}
           </p>
         </div>
       )}
 
-      <FormError message={error} />
-      <div className="mt-4 flex flex-wrap gap-2">
-        <button type="button" className="btn btn-primary flex-1" disabled={isSubmitting} onClick={handleSave}>
-          {isSubmitting ? <><InlineSpinner /> Guardando colores…</> : <><Save size={16} aria-hidden /> Guardar en mi cuenta</>}
-        </button>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+        <AutosaveStatus status={saveStatus} />
         <button type="button" className="btn btn-ghost" onClick={() => { playClick(); resetCustomColors(editMode); }}>
           <RotateCcw size={16} aria-hidden /> Restablecer modo {editMode === 'dark' ? 'oscuro' : 'claro'}
         </button>

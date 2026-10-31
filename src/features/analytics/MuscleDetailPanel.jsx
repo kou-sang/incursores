@@ -3,12 +3,14 @@ import { useMemo } from 'react';
 import { Bar, BarChart, CartesianGrid, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { ChartLegend, ChartTooltip } from '../../components/charts';
 import { useAxisProps } from '../../components/useAxisProps';
+import { ChartInfo } from '../../components/ChartInfo';
 import { IconButton } from '../../components/ui';
 import { CATEGORY_LABELS, MUSCLE_BY_ID } from '../../constants/muscles';
 import { useTheme } from '../../context/ThemeContext';
-import { formatRelativeDays, formatShortDate } from '../../utils/dates';
+import { describeWeek, formatRelativeDays, formatShortDate } from '../../utils/dates';
 import { buildExerciseContributions, buildWeeklyMuscleSeries, classifyRecency, round1 } from '../../utils/metrics';
 import { WEEKLY_SET_TARGET } from './analyticsConstants';
+import { CHART_INFO } from './chartInfo';
 
 const MAX_CONTRIBUTORS = 8;
 
@@ -36,7 +38,7 @@ export const MuscleDetailPanel = ({ muscleId, logs, users, rangeStart, rangeEnd,
   return (
     <div className="rounded-xl border divider p-3 md:p-4" aria-live="polite">
       <header className="mb-3 flex items-start justify-between gap-2">
-        <div>
+        <div className="min-w-0">
           <p className="text-xs font-bold uppercase tracking-wide text-muted">{CATEGORY_LABELS[muscle.category]}</p>
           <h4 className="text-base font-black md:text-lg">{muscle.label}</h4>
           <p className="text-sm text-secondary">
@@ -45,6 +47,7 @@ export const MuscleDetailPanel = ({ muscleId, logs, users, rangeStart, rangeEnd,
           </p>
         </div>
         <div className="flex shrink-0">
+          <ChartInfo info={CHART_INFO.muscleDetail} />
           {!isFilteredOnly && <IconButton label="Filtrar analíticas solo por este músculo" icon={Filter} onClick={onFilterOnly} />}
           <IconButton label="Cerrar detalle" icon={X} onClick={onClose} />
         </div>
@@ -62,7 +65,7 @@ export const MuscleDetailPanel = ({ muscleId, logs, users, rangeStart, rangeEnd,
                 <YAxis {...axis} width={36} domain={[0, Math.ceil(maxValue)]} allowDecimals={false} />
                 <Tooltip
                   cursor={{ fill: chart.grid, opacity: 0.4 }}
-                  content={<ChartTooltip labelFormatter={(_, payload) => `Semana del ${formatShortDate(payload?.[0]?.payload.time)}`} valueFormatter={(value) => `${round1(value)} series`} />}
+                  content={<ChartTooltip labelFormatter={(_, payload) => describeWeek(payload?.[0]?.payload.time, rangeStart, rangeEnd)} valueFormatter={(value) => `${round1(value)} series`} />}
                 />
                 {users.map((user) => (
                   <Bar key={user.userId} dataKey={user.userId} name={user.name} fill={user.color} radius={[4, 4, 0, 0]} maxBarSize={26} isAnimationActive={false} />

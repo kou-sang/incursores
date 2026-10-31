@@ -3,6 +3,8 @@ import { createContext, useContext } from 'react';
 // Contexto, tokens y utilidades puras del tema. El proveedor vive en ThemeProvider.jsx (react-refresh).
 export const THEME_STORAGE_KEY = 'colossus:theme';
 export const CUSTOM_COLORS_KEY = 'colossus:custom-colors';
+export const RECENT_COLORS_KEY = 'colossus:recent-colors';
+export const MAX_RECENT_COLORS = 10;
 export const ThemeContext = createContext(null);
 
 // Paleta de gráficos validada (CVD-safe, orden fijo de slots). Se elige por modo, no se invierte.
@@ -82,16 +84,41 @@ export const contrastRatio = (hexA, hexB) => {
 };
 
 // Sanea lo que venga de localStorage/Firestore: solo claves conocidas y hex válidos.
+// Claves ordenadas: el mismo contenido siempre serializa igual (Firestore no garantiza el orden de los mapas).
 export const sanitizeCustomColors = (raw) => {
   const result = { light: {}, dark: {} };
   ['light', 'dark'].forEach((mode) => {
-    Object.entries(raw?.[mode] ?? {}).forEach(([key, value]) => {
+    Object.entries(raw?.[mode] ?? {}).sort(([a], [b]) => a.localeCompare(b)).forEach(([key, value]) => {
       const hex = normalizeHex(value);
       if (CUSTOM_KEYS.has(key) && hex) result[mode][key] = hex;
     });
   });
   return result;
 };
+
+export const colorsKey = (raw) => JSON.stringify(sanitizeCustomColors(raw));
+
+export const sanitizeRecentColors = (raw) =>
+  [...new Set((Array.isArray(raw) ? raw : []).map(normalizeHex).filter(Boolean))].slice(0, MAX_RECENT_COLORS);
+
+export const readStoredRecentColors = () => {
+  try {
+    return sanitizeRecentColors(JSON.parse(localStorage.getItem(RECENT_COLORS_KEY) ?? '[]'));
+  } catch {
+    return [];
+  }
+};
+
+/*
+ * Eco de escrituras propias: al autoguardar los colores, Firestore devuelve el mismo valor un instante después.
+ * Si mientras tanto el usuario siguió cambiando colores, aplicar ese eco los revertiría. Se recuerda lo último
+ * que escribió este dispositivo para ignorarlo al llegar.
+ */
+let lastLocalColorsWrite = null;
+export const markLocalColorsWrite = (key) => {
+  lastLocalColorsWrite = key;
+};
+export const isOwnColorsEcho = (key) => key === lastLocalColorsWrite;
 
 export const readStoredCustomColors = () => {
   try {

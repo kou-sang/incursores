@@ -7,7 +7,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { BrandMark, FullScreenLoader, IconButton, Spinner } from './components/ui';
 import { AppDataProvider } from './context/AppDataProvider';
 import { FeedbackProvider } from './context/FeedbackProvider';
-import { useTheme } from './context/ThemeContext';
+import { colorsKey, isOwnColorsEcho, useTheme } from './context/ThemeContext';
 import { ThemeProvider } from './context/ThemeProvider';
 import { LoginScreen } from './features/auth/LoginScreen';
 import { ProfileSetup } from './features/auth/ProfileSetup';
@@ -115,19 +115,30 @@ const HeaderActions = ({ username }) => {
 const AuthenticatedApp = ({ user }) => {
   const [activeTab, setActiveTab] = useState('today');
   const { celebrations, celebrate } = useCelebration();
-  const { replaceCustomColors } = useTheme();
+  const { replaceCustomColors, replaceRecentColors } = useTheme();
 
-  // Colores guardados en la cuenta (otro dispositivo) → se aplican aquí. Dependencia serializada:
-  // solo reacciona cuando cambian los colores remotos, no ante cualquier cambio del doc privado.
-  const remoteColorsJson = user.preferences?.colors ? JSON.stringify(user.preferences.colors) : null;
+  // Colores guardados en la cuenta (otro dispositivo) → se aplican aquí. Se ignora el eco de lo que este
+  // mismo dispositivo acaba de autoguardar (si no, revertiría cambios hechos mientras viajaba la escritura).
+  const remoteColors = user.preferences?.colors;
+  const remoteColorsKey = remoteColors ? colorsKey(remoteColors) : null;
   useEffect(() => {
-    if (!remoteColorsJson) return;
+    if (!remoteColorsKey || isOwnColorsEcho(remoteColorsKey)) return;
     try {
-      replaceCustomColors(JSON.parse(remoteColorsJson));
+      replaceCustomColors(JSON.parse(remoteColorsKey));
     } catch (parseError) {
       logError('theme:remote-colors', parseError);
     }
-  }, [remoteColorsJson, replaceCustomColors]);
+  }, [remoteColorsKey, replaceCustomColors]);
+
+  const remoteRecentKey = user.preferences?.recentColors ? JSON.stringify(user.preferences.recentColors) : null;
+  useEffect(() => {
+    if (!remoteRecentKey) return;
+    try {
+      replaceRecentColors(JSON.parse(remoteRecentKey));
+    } catch (parseError) {
+      logError('theme:remote-recent-colors', parseError);
+    }
+  }, [remoteRecentKey, replaceRecentColors]);
 
   // Precarga en reposo de las pestañas livianas (no compite con el primer render).
   useEffect(() => runWhenIdle(() => IDLE_PREFETCH_TABS.forEach(prefetchTab)), []);
@@ -145,7 +156,8 @@ const AuthenticatedApp = ({ user }) => {
 
   return (
     <AppDataProvider user={user}>
-      <div className="min-h-[100dvh] pb-24 lg:pb-8">
+      {/* Margen inferior = barra de navegación móvil + safe-area de iOS: el último elemento nunca queda tapado. */}
+      <div className="min-h-[100dvh] pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-8">
         {/* Header único y responsive (antes había dos barras con marcas distintas: "Colossus" e "Incursores"). */}
         <header className="sticky top-0 z-40 border-b divider glass">
           <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-3 py-2 md:px-4">
