@@ -55,7 +55,7 @@ export const AddToRoutineDialog = ({ exerciseName, onClose }) => {
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 p-4 sm:items-center" onClick={onClose}>
-      <div role="dialog" aria-modal="true" aria-labelledby="add-to-routine-title" className="card w-full max-w-sm p-5" onClick={(event) => event.stopPropagation()}>
+      <div role="dialog" aria-modal="true" aria-labelledby="add-to-routine-title" className="dialog-panel card w-full max-w-sm p-5" onClick={(event) => event.stopPropagation()}>
         <div className="mb-3 flex items-start justify-between gap-2">
           <div className="min-w-0">
             <h2 id="add-to-routine-title" className="text-lg font-bold">Añadir a rutina</h2>

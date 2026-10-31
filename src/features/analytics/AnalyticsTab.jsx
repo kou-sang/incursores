@@ -1,5 +1,6 @@
 import { CalendarDays, ChevronDown, ChevronUp, Dumbbell, Flame, Trophy } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { ChartInfo } from '../../components/ChartInfo';
 import { IconButton, LoadingState, SectionCard, SegmentedControl, StatTile } from '../../components/ui';
 import { MUSCLE_IDS } from '../../constants/muscles';
 import { useAppData } from '../../context/AppDataContext';
@@ -23,6 +24,7 @@ import {
 } from '../../utils/metrics';
 import { AnalyticsFilters } from './AnalyticsFilters';
 import { CRITICAL_RECENCY_DAYS, DATE_PRESETS, MAP_MODES } from './analyticsConstants';
+import { CHART_INFO } from './chartInfo';
 import { ConsistencyChart } from './ConsistencyChart';
 import { MuscleMap } from './MuscleMap';
 import { MuscleDetailPanel } from './MuscleDetailPanel';
@@ -267,6 +269,7 @@ export const AnalyticsTab = () => {
           <SectionCard
             title="Consistencia"
             subtitle="Ejercicios acumulados por perfil en el período, con tus filtros de categoría y músculo"
+            actions={<ChartInfo info={CHART_INFO.consistency} />}
           >
             <ConsistencyChart seriesList={consistencySeries} domain={consistencyDomain} unifyDays={unifyDays} />
           </SectionCard>
@@ -274,13 +277,17 @@ export const AnalyticsTab = () => {
           {effectiveUserIds.length > 1 && (
             <div className="flex flex-wrap items-center gap-2">
               <label htmlFor="focus-user" className="text-sm font-semibold text-secondary">Mapa e indicadores de:</label>
-              <select id="focus-user" className="input w-auto" value={focusId} onChange={(event) => setFocusChoice(event.target.value)}>
+              <select id="focus-user" className="input w-auto min-w-0" value={focusId} onChange={(event) => setFocusChoice(event.target.value)}>
                 <option value={AGGREGATE_FOCUS}>Promedio de la selección</option>
                 {effectiveUserIds.map((id) => <option key={id} value={id}>{profilesById[id]?.username ?? '—'}</option>)}
               </select>
             </div>
           )}
 
+          <div className="-mb-2 flex items-center justify-between gap-2">
+            <h3 className="text-sm font-bold text-secondary">Indicadores de {focusName}</h3>
+            <ChartInfo info={CHART_INFO.kpis} />
+          </div>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatTile icon={CalendarDays} label="Días entrenados" value={focusMetrics.trainingDays} hint={`${focusName} · en el rango`} />
             <StatTile icon={Dumbbell} label="Tonelaje / semana" value={formatTonnage(focusMetrics.tonnagePerWeek)} hint="promedio en el rango" />
@@ -292,7 +299,8 @@ export const AnalyticsTab = () => {
             title="Mapa muscular"
             subtitle={`${focusName} · ${mapMode === 'stimulus' ? 'más verde = más series efectivas por semana' : 'verde = entrenado hace poco · rojo = un mes o más sin entrenar'}`}
             actions={
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <ChartInfo info={mapMode === 'stimulus' ? CHART_INFO.muscleMapStimulus : CHART_INFO.muscleMapRecency} />
                 <SegmentedControl label="Modo del mapa" options={MAP_MODES} value={mapMode} onChange={setMapMode} />
               </div>
             }
@@ -324,7 +332,7 @@ export const AnalyticsTab = () => {
             </div>
           </SectionCard>
 
-          <SectionCard title="Series efectivas por músculo" subtitle={`Promedio semanal · ${focusName}`}>
+          <SectionCard title="Series efectivas por músculo" subtitle={`Promedio semanal de ${focusName}`} actions={<ChartInfo info={CHART_INFO.muscleSets} />}>
             <MuscleSetsChart weeklySetsByMuscle={focusMetrics.weeklySetsByMuscle} highlightMuscle={selectedMuscle} enabledMuscles={enabledMuscles} onSelect={setSelectedMuscle} />
           </SectionCard>
 
@@ -338,18 +346,21 @@ export const AnalyticsTab = () => {
             title="Progresión de fuerza"
             subtitle="Mejor 1RM estimado por sesión — la métrica más fiable de progreso real"
             actions={
-              exerciseOptions.length > 0 && (
-                <select aria-label="Ejercicio" className="input w-auto max-w-[240px]" value={activeExercise} onChange={(event) => setSelectedExercise(event.target.value)}>
-                  {exerciseOptions.map((exercise) => <option key={exercise} value={exercise}>{exercise}</option>)}
-                </select>
-              )
+              <div className="flex min-w-0 max-w-full items-center gap-1">
+                {exerciseOptions.length > 0 && (
+                  <select aria-label="Ejercicio" className="input w-auto min-w-0 max-w-[240px]" value={activeExercise} onChange={(event) => setSelectedExercise(event.target.value)}>
+                    {exerciseOptions.map((exercise) => <option key={exercise} value={exercise}>{exercise}</option>)}
+                  </select>
+                )}
+                <ChartInfo info={CHART_INFO.strength} />
+              </div>
             }
           >
             <StrengthProgressChart seriesList={strengthSeries} unifyDays={unifyDays} />
           </SectionCard>
 
-          <SectionCard title="Tonelaje semanal" subtitle="Series × reps × kg por semana (ejercicios que pasan los filtros)">
-            <WeeklyVolumeChart rows={weeklyRows} users={chartUsers} />
+          <SectionCard title="Tonelaje semanal" subtitle="Series × reps × kg por semana (ejercicios que pasan los filtros)" actions={<ChartInfo info={CHART_INFO.weeklyVolume} />}>
+            <WeeklyVolumeChart rows={weeklyRows} users={chartUsers} rangeStart={range.since} rangeEnd={rangeEnd} />
           </SectionCard>
         </>
       )}

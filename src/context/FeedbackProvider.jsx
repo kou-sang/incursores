@@ -87,7 +87,7 @@ export const FeedbackProvider = ({ children }) => {
               role="alertdialog"
               aria-modal="true"
               aria-labelledby="confirm-title"
-              className="card w-full max-w-sm p-5"
+              className="dialog-panel card w-full max-w-sm p-5"
               initial={{ y: 24 }}
               animate={{ y: 0 }}
               exit={{ y: 24 }}

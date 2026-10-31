@@ -44,8 +44,18 @@
 }
 
 html, body { background: var(--bg); color: var(--text); }
-/* Red de seguridad: ningún elemento desbordado debe ensanchar la página ni desplazar la barra inferior. */
-body { overflow-x: clip; max-width: 100%; }
+/*
+ * Red de seguridad móvil: nada puede ser más ancho que la pantalla.
+ * - overflow-x: clip en html y body (clip, no hidden: no rompe position: sticky).
+ * - Palabras largas (nombres de ejercicios) se cortan en vez de empujar el ancho.
+ * - Medios y campos nunca superan a su contenedor.
+ */
+html, body { overflow-x: clip; max-width: 100%; }
+body { overflow-wrap: break-word; }
+img, svg, video, canvas { max-width: 100%; }
+.card, .segmented, .input { min-width: 0; max-width: 100%; }
+/* Ventanas (diálogos): nunca más altas que la pantalla; el contenido sobrante hace scroll adentro. */
+.dialog-panel { max-height: calc(100dvh - 2rem); overflow-y: auto; overscroll-behavior: contain; }
 body { -webkit-tap-highlight-color: transparent; font-feature-settings: 'tnum' 1; }
 
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 8px; }
@@ -167,3 +177,12 @@ body { -webkit-tap-highlight-color: transparent; font-feature-settings: 'tnum' 1
 /* Barras translúcidas: color-mix funciona con variables (el modificador /90 de Tailwind no). */
 .glass { background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }
+
+/* Buscador de Ejercicios en móvil: queda fijo debajo del encabezado (61px = 44px de botones + 16px de padding + 1px de borde). */
+.library-search { top: var(--header-h, 61px); background: var(--surface); }
+
+/* Barra de tono del selector de color. */
+.hue-slider { -webkit-appearance: none; appearance: none; height: 14px; border-radius: 999px; cursor: pointer;
+  background: linear-gradient(90deg, #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%); }
+.hue-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: #fff; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.45), 0 1px 3px rgba(0,0,0,.3); }
+.hue-slider::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.45); }

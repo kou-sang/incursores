@@ -107,3 +107,14 @@ export const formatRelativeDays = (days) => {
   if (days === 1) return 'Ayer';
   return `Hace ${days} días`;
 };
+
+// Etiqueta de una semana (lunes) en gráficos semanales: avisa si quedó cortada por el rango o si está en curso.
+export const describeWeek = (weekStartMs, rangeStart, rangeEnd, now = new Date()) => {
+  const weekStart = new Date(weekStartMs);
+  const weekEnd = addDays(weekStart, 7);
+  const base = `Semana del ${formatShortDate(weekStart)}`;
+  if (rangeStart && weekStart < startOfDay(rangeStart)) return `${base} (incompleta: el rango empieza el ${formatShortDate(rangeStart)})`;
+  if (now < weekEnd && (!rangeEnd || rangeEnd >= now)) return `${base} (en curso)`;
+  if (rangeEnd && rangeEnd < addDays(weekEnd, -1)) return `${base} (incompleta: el rango termina el ${formatShortDate(rangeEnd)})`;
+  return base;
+};
