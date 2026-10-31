@@ -17,6 +17,29 @@ Cada versión se etiqueta en git como `vX.Y.Z` y la versión vigente se toma de 
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-10-31
+
+### Added
+- Ficha completa para los 209 ejercicios de la pestaña Ejercicios: ilustraciones del movimiento (inicio, mitad y final), diagrama corporal con el % de estímulo por músculo, técnica paso a paso, consejos y errores comunes. Las ilustraciones se dibujan por código y siguen los colores del tema.
+- Botón de información (i) en cada gráfico de Analíticas (indicadores, consistencia, mapa muscular, series por músculo, detalle del músculo, progresión de fuerza y tonelaje): explica cómo se calcula, cómo interpretarlo y un consejo.
+- Selector de color propio en Perfil (área de saturación y brillo, barra de tono, HEX, colores sugeridos) con la lista de **tus últimos colores** elegidos, guardada en la cuenta.
+- Autoguardado de los colores personalizados en la cuenta.
+
+### Changed
+- Los nombres de ejercicios conservan la Ñ (CURL ARAÑA, CURL DE MUÑECA, LEÑADOR EN POLEA); los nombres anteriores sin Ñ quedan como alias, así el historial no se pierde.
+- "BICICLETA" (abdominales) pasa a llamarse **CRUNCH BICICLETA** para no confundirse con el ciclismo; "BICICLETA" sigue funcionando como alias.
+- Los gráficos semanales avisan en el detalle cuando una semana está incompleta (el rango empieza o termina a mitad de semana) o en curso.
+- Analíticas: el gráfico de Consistencia pasa arriba de los indicadores y el mapa muscular usa el sexo del perfil (se quitó el selector de cuerpo). Ajustes hechos a mano después de 4.1.0.
+- Perfil > Apariencia: se quita el botón "Guardar en mi cuenta" (ahora se guarda solo) y se muestra el estado del guardado.
+
+### Removed
+- Sección "Video" (marcador "Próximamente") de la ficha de ejercicios, y el archivo `src/constants/exerciseContent.js`, reemplazado por `exerciseGuides.js` y `exercisePoses.js`.
+
+### Fixed
+- Celular: ningún contenido puede ser más ancho que la pantalla (palabras largas, selectores, campos y gráficos) y las ventanas emergentes no superan su alto (hacen scroll por dentro).
+- Ejercicios (celular): el último ejercicio de la lista quedaba tapado por la barra de navegación inferior y obligaba a desplazar la pantalla. Ahora la lista se desplaza con la página y el buscador queda fijo arriba.
+- Perfil: al recargar, los colores guardados en la cuenta pisaban los últimos colores elegidos si no se había tocado "Guardar".
+
 ## [4.1.0] - 2026-10-30
 
 ### Added
@@ -139,7 +162,8 @@ Cada versión se etiqueta en git como `vX.Y.Z` y la versión vigente se toma de 
 ### Added
 - Versión inicial: registro de ejercicios (proyecto de React + Vite + Firebase).
 
-[Unreleased]: https://github.com/kou-sang/incursores/compare/v4.1.0...HEAD
+[Unreleased]: https://github.com/kou-sang/incursores/compare/v4.2.0...HEAD
+[4.2.0]: https://github.com/kou-sang/incursores/compare/v4.1.0...v4.2.0
 [4.1.0]: https://github.com/kou-sang/incursores/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/kou-sang/incursores/compare/v2.0.0...v4.0.0
 [2.0.0]: https://github.com/kou-sang/incursores/compare/v1.6.0...v2.0.0
